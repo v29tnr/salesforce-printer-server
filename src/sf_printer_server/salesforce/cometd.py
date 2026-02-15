@@ -35,7 +35,8 @@ class SalesforceCometD:
         logger.info(f"Subscribing to channel: {channel}")
         logger.info(f"Using instance URL: {self.instance_url}")
         logger.info(f"CometD endpoint: {self.endpoint}")
-        logger.info(f"Access token (first 20 chars): {self.access_token[:20]}...")
+        logger.info(f"Access token (first 30 chars): {self.access_token[:30]}...")
+        logger.info(f"Access token (last 10 chars): ...{self.access_token[-10:]}")
         
         try:
             # Headers must be sent with EACH request, not just at session level
@@ -43,6 +44,7 @@ class SalesforceCometD:
                 "Authorization": f"Bearer {self.access_token}",
                 "Content-Type": "application/json"
             }
+            logger.info(f"Request headers: Authorization=Bearer <token>, Content-Type={headers['Content-Type']}")
             
             async with aiohttp.ClientSession() as session:
                 self.session = session

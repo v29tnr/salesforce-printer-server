@@ -143,7 +143,8 @@ class SalesforceOAuthClient:
         # Start callback server on port 8888
         port = 8888
         try:
-            with socketserver.TCPServer(("localhost", port), CallbackHandler) as httpd:
+            # Bind to 0.0.0.0 to allow connections from outside Docker container
+            with socketserver.TCPServer(("0.0.0.0", port), CallbackHandler) as httpd:
                 logger.info(f"Starting callback server on port {port}")
                 
                 # Open browser for authorization

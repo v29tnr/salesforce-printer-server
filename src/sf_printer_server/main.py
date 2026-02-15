@@ -125,9 +125,10 @@ async def start_server():
                 instance_url=config.get('salesforce.instance_url')
             )
             
-            if web_oauth.access_token and web_oauth.is_token_valid():
+            # Auto-refresh token if expired
+            if web_oauth.access_token and web_oauth.ensure_authenticated():
                 streaming_token = web_oauth.access_token
-                logger.info("✓ Using Web OAuth token for Streaming API (from previous browser login)")
+                logger.info("✓ Using Web OAuth token for Streaming API (auto-refreshed if needed)")
         
         # Option 3: Fall back to JWT token (won't work with Streaming API)
         if not streaming_token:

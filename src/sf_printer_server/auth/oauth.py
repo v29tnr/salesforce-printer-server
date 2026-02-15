@@ -185,7 +185,7 @@ class SalesforceOAuthClient:
                     return False
                 
                 # Exchange code for tokens
-                return self._exchange_code_for_token(auth_code)
+                return self.exchange_code_for_token(auth_code)
                 
         except OSError as e:
             logger.error(f"Failed to start callback server: {e}")

@@ -35,14 +35,16 @@ class SalesforceCometD:
         logger.info(f"Subscribing to channel: {channel}")
         logger.info(f"Using instance URL: {self.instance_url}")
         logger.info(f"CometD endpoint: {self.endpoint}")
+        logger.info(f"Access token (first 20 chars): {self.access_token[:20]}...")
         
         try:
+            # Headers must be sent with EACH request, not just at session level
             headers = {
                 "Authorization": f"Bearer {self.access_token}",
                 "Content-Type": "application/json"
             }
             
-            async with aiohttp.ClientSession(headers=headers) as session:
+            async with aiohttp.ClientSession() as session:
                 self.session = session
                 
                 # Handshake
@@ -50,17 +52,19 @@ class SalesforceCometD:
                 handshake_msg = [{
                     "channel": "/meta/handshake",
                     "version": "1.0",
+                    "minimumVersion": "1.0",
                     "supportedConnectionTypes": ["long-polling"],
                     "id": str(self._next_id())
                 }]
                 
-                async with session.post(self.endpoint, json=handshake_msg) as resp:
+                async with session.post(self.endpoint, json=handshake_msg, headers=headers) as resp:
                     handshake_response = await resp.json()
                     logger.info(f"Handshake response: {handshake_response}")
                     
                     if not handshake_response[0].get("successful"):
                         error_msg = handshake_response[0].get("error", "Unknown error")
-                        raise Exception(f"Handshake failed: {error_msg}")
+                        failure_reason = handshake_response[0].get("ext", {}).get("sfdc", {}).get("failureReason", "Unknown")
+                        raise Exception(f"Handshake failed: {error_msg} (Reason: {failure_reason})")
                     
                     client_id = handshake_response[0]["clientId"]
                     logger.info(f"✓ Handshake successful, clientId: {client_id}")
@@ -74,7 +78,7 @@ class SalesforceCometD:
                     "id": str(self._next_id())
                 }]
                 
-                async with session.post(self.endpoint, json=connect_msg) as resp:
+                async with session.post(self.endpoint, json=connect_msg, headers=headers) as resp:
                     connect_response = await resp.json()
                     logger.info(f"Connect response: {connect_response}")
                     
@@ -92,7 +96,7 @@ class SalesforceCometD:
                     "id": str(self._next_id())
                 }]
                 
-                async with session.post(self.endpoint, json=subscribe_msg) as resp:
+                async with session.post(self.endpoint, json=subscribe_msg, headers=headers) as resp:
                     subscribe_response = await resp.json()
                     logger.info(f"Subscribe response: {subscribe_response}")
                     
@@ -112,7 +116,7 @@ class SalesforceCometD:
                     }]
                     
                     try:
-                        async with session.post(self.endpoint, json=poll_msg, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                        async with session.post(self.endpoint, json=poll_msg, headers=headers, timeout=aiohttp.ClientTimeout(total=120)) as resp:
                             messages = await resp.json()
                             
                             for message in messages:

@@ -53,10 +53,16 @@ class SalesforceCometD:
             # Create authenticator with our pre-obtained token
             authenticator = TokenAuthenticator(self.access_token, self.instance_url)
             
-            # Create streaming client with our custom authenticator
-            async with SalesforceStreamingClient(
-                authenticator=authenticator
-            ) as client:
+            # Create streaming client - pass authenticator via _authenticator private attr
+            client = SalesforceStreamingClient(
+                consumer_key=self.client_id,
+                consumer_secret=self.client_secret or ''
+            )
+            
+            # Override the client's authenticator with ours
+            client._authenticator = authenticator
+            
+            async with client:
                 logger.info("Successfully connected to Streaming API")
                 
                 # Subscribe to the channel

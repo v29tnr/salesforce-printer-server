@@ -22,6 +22,11 @@ username = ""
 # Path to private key file for JWT authentication
 private_key_file = ""
 
+# For Streaming API (REQUIRED - JWT tokens don't work with Streaming/CometD):
+# Password + Security Token concatenated (e.g., "MyPass123MySecurityToken456")
+# Get security token from: Setup → My Personal Information → Reset Security Token
+streaming_password = ""
+
 # For password method (testing only):
 # client_secret = ""
 # username = ""

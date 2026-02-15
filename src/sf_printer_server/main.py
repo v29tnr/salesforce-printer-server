@@ -88,25 +88,31 @@ async def start_server():
         client_id = config.get('auth.client_id')
         
         # IMPORTANT: JWT Bearer tokens don't work with Streaming API (CometD)
-        # We need to use simple-salesforce to get a proper session
-        logger.info("Getting Streaming API session (JWT tokens don't work directly with CometD)...")
-        try:
-            from simple_salesforce import Salesforce
+        # We need to use Username-Password OAuth flow to get a token that works with Streaming
+        logger.info("Getting Streaming API token (JWT tokens don't work with CometD)...")
+        
+        streaming_password = config.get('auth.streaming_password')
+        if streaming_password:
+            # Use username-password OAuth flow for Streaming API
+            logger.info("Using Username-Password OAuth for Streaming API access...")
+            from sf_printer_server.auth.oauth import SalesforceOAuthClient
             
-            # Use simple-salesforce with our OAuth token to get a session that works with Streaming
-            sf = Salesforce(
-                instance_url=actual_instance_url,
-                session_id=access_token,
-                version='57.0'
+            streaming_oauth = SalesforceOAuthClient(
+                client_id=client_id,
+                client_secret=config.get('auth.client_secret', ''),
+                instance_url=config.get('salesforce.instance_url')
             )
             
-            # simple-salesforce session_id property will work with Streaming API
-            streaming_token = sf.session_id
-            logger.info("✓ Got Streaming API compatible session")
-            
-        except Exception as e:
-            logger.warning(f"Could not initialize simple-salesforce: {e}")
-            logger.warning("Trying OAuth token directly (may not work)...")
+            username = config.get('auth.username')
+            if streaming_oauth.authenticate_client_credentials(username, streaming_password):
+                streaming_token = streaming_oauth.access_token
+                logger.info("✓ Got Streaming API token via Username-Password OAuth")
+            else:
+                logger.error("Failed to get Streaming API token. Falling back to JWT token (may not work)")
+                streaming_token = access_token
+        else:
+            logger.warning("No streaming_password in config - using JWT token (may not work with Streaming API)")
+            logger.warning("To fix: Add 'streaming_password' to [auth] section (password + security token)")
             streaming_token = access_token
         
         cometd = SalesforceCometD(

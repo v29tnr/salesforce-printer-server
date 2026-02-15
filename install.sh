@@ -135,21 +135,44 @@ if [ "$auth_choice" = "1" ]; then
     echo "==========================================${NC}"
     echo ""
     echo "5. OAuth Scopes:"
-    echo "   • Access and manage your data (api)"
+    echo "   • Full access (full) - REQUIRED for Streaming API"
     echo "   • Perform requests on your behalf at any time (refresh_token, offline_access)"
     echo ""
-    echo "6. Click 'Save' and wait 2-10 minutes for changes to take effect"
+    echo "6. OAuth Flow Enablement (scroll down):"
+    echo "   ✓ Enable Device Flow (Optional)"
+    echo "   [NOTE: Username-Password flow is enabled by default for Streaming API]"
+    echo ""
+    echo "7. Click 'Save' and wait 2-10 minutes for changes to take effect"
     echo ""
     echo -e "${GREEN}Note: For JWT authentication, 'Permitted Users' will be greyed out - this is normal!"
     echo "JWT uses server-to-server authentication and doesn't require user approval.${NC}"
     echo ""
-    echo "7. Ensure your integration user has API access in Salesforce"
+    echo "8. Ensure your integration user has:"
+    echo "   • API Enabled (Setup → Users → Permission Sets)"
+    echo "   • Security Token reset (an email will be sent)"
     echo ""
     
     read -p "Press ENTER when ready to continue..."
     
     read -p "Consumer Key: " CLIENT_ID
     read -p "Integration user email: " USERNAME
+    
+    echo ""
+    echo -e "${YELLOW}=========================================="
+    echo "  Streaming API Authentication"
+    echo "==========================================${NC}"
+    echo "JWT tokens don't work with Salesforce Streaming API (CometD)."
+    echo "You need to also provide password + security token for Streaming API access."
+    echo ""
+    echo "Get your security token:"
+    echo "  Setup → My Personal Information → Reset My Security Token"
+    echo "  (A new token will be emailed to you)"
+    echo ""
+    
+    read -sp "Password for ${USERNAME}: " PASSWORD
+    echo ""
+    read -p "Security Token: " SECURITY_TOKEN
+    STREAMING_PASSWORD="${PASSWORD}${SECURITY_TOKEN}"
     
     PRIVATE_KEY_FILE="/app/certs/private_key.pem"
     
@@ -186,6 +209,7 @@ EOF
 if [ "$AUTH_METHOD" = "jwt" ]; then
     cat >> config/config.toml << EOF
 private_key_file = "${PRIVATE_KEY_FILE}"
+streaming_password = "${STREAMING_PASSWORD}"
 EOF
 else
     cat >> config/config.toml << EOF

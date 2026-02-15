@@ -36,6 +36,24 @@ EONG
     exit 0
 fi
 
+# Check docker-compose
+if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null 2>&1; then
+    echo -e "${YELLOW}⚠️  Installing docker-compose...${NC}"
+    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    sudo chmod +x /usr/local/bin/docker-compose
+    echo -e "${GREEN}✓ docker-compose installed${NC}"
+fi
+
+# Determine which docker compose command to use
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+elif docker compose version &> /dev/null 2>&1; then
+    DOCKER_COMPOSE="docker compose"
+else
+    echo -e "${RED}❌ Failed to install docker-compose${NC}"
+    exit 1
+fi
+
 # Create directories
 echo -e "${BLUE}📁 Creating directories...${NC}"
 mkdir -p config certs
@@ -148,13 +166,6 @@ else
     FULL_PASSWORD="${PASSWORD}${SECURITY_TOKEN}"
 fi
 
-# Printer configuration
-echo ""
-echo -e "${BLUE}=========================================="
-echo "  Printer Configuration"
-echo "==========================================${NC}"
-read -p "Default printer name [Zebra_Printer]: " PRINTER_NAME
-PRINTER_NAME=${PRINTER_NAME:-Zebra_Printer}
 
 # Create config file
 echo ""
@@ -185,14 +196,6 @@ fi
 
 cat >> config/config.toml << EOF
 
-[printer]
-default_printer = "${PRINTER_NAME}"
-zpl_enabled = true
-
-[print_job]
-max_retries = 3
-retry_delay = 5
-
 [logging]
 level = "INFO"
 EOF
@@ -209,7 +212,7 @@ docker build -t sf-printer-server . -q
 # Start service
 echo ""
 echo -e "${BLUE}🚀 Starting service...${NC}"
-docker compose up -d
+$DOCKER_COMPOSE up -d
 
 # Wait a moment
 sleep 2
@@ -224,13 +227,13 @@ if docker ps | grep -q sf-printer-server; then
     echo "Service is running!"
     echo ""
     echo "Useful commands:"
-    echo "  • View logs:    docker compose logs -f"
-    echo "  • Stop service: docker compose down"
-    echo "  • Restart:      docker compose restart"
-    echo "  • Status:       docker compose ps"
+    echo "  • View logs:    $DOCKER_COMPOSE logs -f"
+    echo "  • Stop service: $DOCKER_COMPOSE down"
+    echo "  • Restart:      $DOCKER_COMPOSE restart"
+    echo "  • Status:       $DOCKER_COMPOSE ps"
     echo ""
 else
     echo ""
     echo -e "${YELLOW}⚠️  Service may not have started correctly${NC}"
-    echo "Check logs with: docker-compose logs"
+    echo "Check logs with: $DOCKER_COMPOSE logs"
 fi

@@ -1,27 +1,25 @@
 # Example configuration for Salesforce Printer Server
 
-# Salesforce Connected App Configuration
-[connected_app]
-client_id = "YOUR_CLIENT_ID"
-client_secret = "YOUR_CLIENT_SECRET"
-callback_url = "YOUR_CALLBACK_URL"
+[salesforce]
+instance_url = "https://login.salesforce.com"  # or "https://test.salesforce.com" for sandbox
 
-# Printer Configuration
-[printers]
-default_printer = "YOUR_DEFAULT_PRINTER_ID"
+# JWT Authentication (Recommended for production)
+[auth]
+method = "jwt"
+client_id = "YOUR_CONSUMER_KEY"
+username = "integration.user@yourcompany.com"
+private_key_file = "/app/certs/private_key.pem"
 
-# Print Job Configuration
-[print_jobs]
-zpl_enabled = true
-max_retries = 3
-retry_delay = 5
+# OR Username/Password Authentication (Testing only)
+# [auth]
+# method = "password"
+# client_id = "YOUR_CONSUMER_KEY"
+# client_secret = "YOUR_CONSUMER_SECRET"
+# username = "your.username@yourcompany.com"
+# password = "YOUR_PASSWORD_AND_SECURITY_TOKEN"
 
-# Logging Configuration
 [logging]
 level = "INFO"
-log_file = "printer_server.log"
 
-# Platform Events Configuration
-[platform_events]
-event_name = "YOUR_EVENT_NAME"
-subscription_url = "YOUR_SUBSCRIPTION_URL"
+# Note: Printer configuration (name, IP, ZPL content) is managed 
+# in Salesforce and passed via Platform Events

@@ -72,10 +72,11 @@ client_id = "YOUR_CONSUMER_KEY"
 username = "integration.user@company.com"
 private_key_file = "/app/certs/private_key.pem"
 
-[printer]
-default_printer = "Zebra_Printer"
-zpl_enabled = true
+[logging]
+level = "INFO"
 ```
+
+> **Note:** Printer configuration (name, IP address, ZPL content) is managed in Salesforce and passed via Platform Events.
 
 ## Support
 

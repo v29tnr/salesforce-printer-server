@@ -32,7 +32,26 @@ else
         exit 1
     fi
     
-    # Run the auth script inside the container
+    # Stop the running service to free up port 8888
+    echo "Stopping service temporarily to free port 8888..."
+    $DOCKER_COMPOSE down 2>/dev/null
+    
+    # Run the auth script inside a temporary container
     # Map port 8888 for OAuth callback and run interactively
+    echo ""
     $DOCKER_COMPOSE run --rm --service-ports sf-printer-server python3 /app/src/sf_printer_server/auth_setup.py
+    
+    AUTH_RESULT=$?
+    
+    # Restart the service
+    if [ $AUTH_RESULT -eq 0 ]; then
+        echo ""
+        echo "Starting service..."
+        $DOCKER_COMPOSE up -d
+    else
+        echo ""
+        echo "Authentication failed. Start service manually with: make start"
+    fi
+    
+    exit $AUTH_RESULT
 fi

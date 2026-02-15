@@ -29,8 +29,8 @@ class SalesforceOAuthClient:
     def __init__(
         self,
         client_id: str,
-        client_secret: str,
-        instance_url: str,
+        client_secret: Optional[str] = None,
+        instance_url: str = None,
         redirect_uri: str = "http://localhost:8888/oauth/callback",
         token_file: Optional[str] = None
     ):
@@ -39,13 +39,13 @@ class SalesforceOAuthClient:
         
         Args:
             client_id: Connected App Consumer Key
-            client_secret: Connected App Consumer Secret
+            client_secret: Connected App Consumer Secret (optional for JWT flow)
             instance_url: Salesforce instance URL (e.g., https://login.salesforce.com)
             redirect_uri: OAuth callback URL
             token_file: Path to store/load token
         """
         self.client_id = client_id
-        self.client_secret = client_secret
+        self.client_secret = client_secret or ''
         self.instance_url = instance_url.rstrip('/')
         self.redirect_uri = redirect_uri
         

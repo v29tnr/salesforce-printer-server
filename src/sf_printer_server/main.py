@@ -47,13 +47,46 @@ async def start_server():
         access_token = auth_manager.get_access_token()
         logger.info("✓ Authentication successful")
         
+        # Verify token works with a test API call
+        instance_url = config.get('salesforce.instance_url')
+        actual_instance_url = auth_manager.oauth_client.instance_url_from_token or instance_url
+        
+        logger.info("Testing API access with token...")
+        import aiohttp
+        import json
+        try:
+            async with aiohttp.ClientSession() as session:
+                headers = {"Authorization": f"Bearer {access_token}"}
+                
+                # Test REST API
+                test_url = f"{actual_instance_url}/services/data/v57.0/"
+                async with session.get(test_url, headers=headers) as resp:
+                    if resp.status == 200:
+                        logger.info("✓ Token valid for REST API")
+                    else:
+                        logger.warning(f"REST API test returned status {resp.status}: {await resp.text()}")
+                
+                # Decode JWT to see what's inside
+                import base64
+                try:
+                    token_parts = access_token.split('.')
+                    if len(token_parts) >= 2:
+                        # Decode payload (add padding if needed)
+                        payload = token_parts[1]
+                        payload += '=' * (4 - len(payload) % 4)
+                        decoded = json.loads(base64.b64decode(payload))
+                        logger.info(f"JWT scopes: {decoded.get('scope', 'No scope field in JWT')}")
+                        logger.info(f"JWT sub: {decoded.get('sub', 'N/A')}")
+                        logger.info(f"JWT aud: {decoded.get('aud', 'N/A')}")
+                except Exception as e:
+                    logger.debug(f"Could not decode JWT: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Token test failed: {e}")
+        
         # Initialize CometD client
         logger.info("Connecting to Salesforce Streaming API...")
-        instance_url = config.get('salesforce.instance_url')
         client_id = config.get('auth.client_id')
-        
-        # Get the actual instance URL from the OAuth response
-        actual_instance_url = auth_manager.oauth_client.instance_url_from_token or instance_url
         
         cometd = SalesforceCometD(
             endpoint=f"{actual_instance_url}/cometd/57.0",

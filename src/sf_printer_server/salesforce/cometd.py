@@ -17,11 +17,9 @@ class TokenAuthenticator(AuthenticatorBase):
     
     async def authenticate(self):
         """Return pre-obtained token - no actual authentication needed."""
-        # aiosfstream expects these attributes
-        return {
-            "access_token": self.access_token,
-            "instance_url": self.instance_url
-        }
+        # aiosfstream will use self.access_token and self.instance_url
+        # No actual authentication needed since we already have the token
+        pass
 
 
 class SalesforceCometD:

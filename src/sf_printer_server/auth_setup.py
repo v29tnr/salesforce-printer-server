@@ -36,16 +36,10 @@ def authenticate_manual():
         redirect_uri='http://localhost:8888/oauth/callback'
     )
     
-    print("A callback server will start on port 8888 to receive the OAuth response.")
+    print("A callback server will start on port 8888 and open your browser.")
+    print("If the browser doesn't open automatically, you'll see a URL to visit.")
     print()
-    print("Open this URL in your browser:")
-    print()
-    auth_url = oauth_client.get_authorization_url()
-    print(f"   {auth_url}")
-    print()
-    print("After you approve, you'll be redirected back and authentication will complete automatically.")
-    print()
-    input("Press Enter when ready to start the callback server...")
+    input("Press Enter to continue...")
     
     # Use the web flow with callback server
     if oauth_client.authenticate_web_server_flow():

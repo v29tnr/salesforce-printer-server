@@ -232,6 +232,10 @@ class SalesforceOAuthClient:
         """
         token_url = f"{self.instance_url}/services/oauth2/token"
         
+        if not self.code_verifier:
+            logger.error("Code verifier is missing! OAuth flow was not properly initialized.")
+            return False
+        
         data = {
             'grant_type': 'authorization_code',
             'code': auth_code,
@@ -240,6 +244,9 @@ class SalesforceOAuthClient:
             'redirect_uri': self.redirect_uri,
             'code_verifier': self.code_verifier  # PKCE
         }
+        
+        logger.debug(f"Code verifier present: {bool(self.code_verifier)}")
+        logger.debug(f"Code verifier length: {len(self.code_verifier) if self.code_verifier else 0}")
         
         try:
             logger.info("Exchanging authorization code for tokens...")

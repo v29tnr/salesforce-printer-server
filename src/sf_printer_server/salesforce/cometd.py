@@ -15,7 +15,7 @@ class TokenAuthenticator(AuthenticatorBase):
         self.access_token = access_token
         self.instance_url = instance_url
     
-    async def authenticate(self):
+    async def _authenticate(self):
         """Return pre-obtained token - no actual authentication needed."""
         # aiosfstream will use self.access_token and self.instance_url
         # No actual authentication needed since we already have the token

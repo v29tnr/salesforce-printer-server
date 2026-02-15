@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  sf-printer-server:
+    build: .
+    container_name: sf-printer-server
+    restart: unless-stopped
+    volumes:
+      # Mount config directory
+      - ./config:/app/config
+      # Mount certs directory for JWT authentication
+      - ./certs:/app/certs
+    environment:
+      # Optional: Set log level
+      - LOG_LEVEL=INFO
+    # Uncomment if you need to access printer devices
+    # devices:
+    #   - /dev/usb/lp0:/dev/usb/lp0
+    # For network printers, you may need host network mode
+    # network_mode: host

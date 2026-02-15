@@ -76,15 +76,17 @@ cd ..
 3. **Enable OAuth Settings**:
    - ✓ Enable OAuth Settings
    - **Callback URL**: `https://login.salesforce.com`
-   - ✓ **Use digital signatures** ← Upload `certificate.crt`
    - **Selected OAuth Scopes**:
      - Access and manage your data (api)
      - Perform requests on your behalf at any time (refresh_token, offline_access)
-4. Click **Save** and wait 2-10 minutes
-5. After saving, click **Manage → Edit Policies**:
+4. **Scroll down to Flow Enablement**:
+   - ✓ **Enable JWT Bearer Flow**
+   - **Upload Certificate**: `certificate.crt` file from your `certs/` directory
+5. Click **Save** and wait 2-10 minutes
+6. After saving, click **Manage → Edit Policies**:
    - **Permitted Users**: Admin approved users are pre-authorized
    - Click **Save**
-6. Click **Manage Profiles** or **Manage Permission Sets**:
+7. Click **Manage Profiles** or **Manage Permission Sets**:
    - Add your integration user's profile/permission set
 
 #### Get Consumer Key

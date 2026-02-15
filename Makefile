@@ -1,7 +1,7 @@
 # Salesforce Printer Server - Quick Commands
 # Usage: make <command>
 
-.PHONY: help install update start stop restart logs config status clean
+.PHONY: help install update start stop restart logs config status clean auth
 
 help:
 	@echo "Salesforce Printer Server - Quick Commands"
@@ -9,6 +9,7 @@ help:
 	@echo "Setup & Updates:"
 	@echo "  make install    - First-time installation"
 	@echo "  make update     - Pull latest code and rebuild"
+	@echo "  make auth       - Set up authentication (browser-based, no security token needed)"
 	@echo ""
 	@echo "Service Management:"
 	@echo "  make start      - Start the service"
@@ -23,6 +24,9 @@ help:
 
 install:
 	@chmod +x install.sh && ./install.sh
+
+auth:
+	@chmod +x auth-setup.sh && ./auth-setup.sh
 
 update:
 	@chmod +x update.sh && ./update.sh

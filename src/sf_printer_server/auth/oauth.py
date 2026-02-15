@@ -8,6 +8,9 @@ import os
 import time
 import logging
 import webbrowser
+import hashlib
+import secrets
+import base64
 from pathlib import Path
 from typing import Optional, Dict, Any
 from urllib.parse import urlencode, parse_qs, urlparse
@@ -68,22 +71,31 @@ class SalesforceOAuthClient:
         self.refresh_token = None
         self.instance_url_from_token = None
         self.token_expires_at = None
+        self.code_verifier = None  # For PKCE
         
         # Load existing token if available
         self._load_token()
     
     def get_authorization_url(self) -> str:
         """
-        Get the OAuth2 authorization URL for user login.
+        Get the OAuth2 authorization URL for user login with PKCE.
         
         Returns:
             Authorization URL string
         """
+        # Generate PKCE code verifier and challenge
+        self.code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8').rstrip('=')
+        code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(self.code_verifier.encode('utf-8')).digest()
+        ).decode('utf-8').rstrip('=')
+        
         params = {
             'response_type': 'code',
             'client_id': self.client_id,
             'redirect_uri': self.redirect_uri,
-            'scope': 'api refresh_token'
+            'scope': 'api refresh_token',
+            'code_challenge': code_challenge,
+            'code_challenge_method': 'S256'
         }
         
         auth_url = f"{self.instance_url}/services/oauth2/authorize?{urlencode(params)}"
@@ -225,7 +237,8 @@ class SalesforceOAuthClient:
             'code': auth_code,
             'client_id': self.client_id,
             'client_secret': self.client_secret,
-            'redirect_uri': self.redirect_uri
+            'redirect_uri': self.redirect_uri,
+            'code_verifier': self.code_verifier  # PKCE
         }
         
         try:

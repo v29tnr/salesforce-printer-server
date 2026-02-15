@@ -23,17 +23,27 @@ if [ -f "config/config.toml" ]; then
     cp config/config.toml config/config.toml.backup
 fi
 
+# Determine which docker compose command to use
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+elif docker compose version &> /dev/null 2>&1; then
+    DOCKER_COMPOSE="docker compose"
+else
+    echo "❌ docker-compose not found"
+    exit 1
+fi
+
 # Stop service
 echo "🛑 Stopping service..."
-docker compose down
+$DOCKER_COMPOSE down
 
 # Rebuild image
 echo "🏗️  Rebuilding Docker image..."
-docker build -t sf-printer-server .
+$DOCKER_COMPOSE build --no-cache
 
 # Start service
 echo "🚀 Starting service..."
-docker compose up -d
+$DOCKER_COMPOSE up -d --force-recreate
 
 echo ""
 echo -e "${GREEN}✅ Update complete!${NC}"

@@ -207,12 +207,12 @@ echo -e "${GREEN}✓ Configuration saved${NC}"
 # Build Docker image
 echo ""
 echo -e "${BLUE}🐋 Building Docker image...${NC}"
-docker build -t sf-printer-server . -q
+$DOCKER_COMPOSE build --no-cache
 
 # Start service
 echo ""
 echo -e "${BLUE}🚀 Starting service...${NC}"
-$DOCKER_COMPOSE up -d
+$DOCKER_COMPOSE up -d --force-recreate
 
 # Wait a moment
 sleep 2

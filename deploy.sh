@@ -43,10 +43,22 @@ if [ ! -f "config/config.toml" ]; then
     fi
 fi
 
+# Determine which docker compose command to use
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+elif docker compose version &> /dev/null 2>&1; then
+    DOCKER_COMPOSE="docker compose"
+else
+    echo "❌ docker-compose not found. Installing..."
+    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    sudo chmod +x /usr/local/bin/docker-compose
+    DOCKER_COMPOSE="docker-compose"
+fi
+
 # Build the Docker image
 echo ""
 echo "Building Docker image..."
-docker build -t sf-printer-server .
+$DOCKER_COMPOSE build --no-cache
 
 echo ""
 echo "✓ Build complete!"
@@ -63,12 +75,12 @@ echo "   ./certs/private_key.pem"
 echo "   ./certs/certificate.crt"
 echo ""
 echo "3. Start the server:"
-echo "   docker compose up -d"
+echo "   $DOCKER_COMPOSE up -d"
 echo ""
 echo "4. View logs:"
-echo "   docker compose logs -f"
+echo "   $DOCKER_COMPOSE logs -f"
 echo ""
 echo "5. Stop the server:"
-echo "   docker compose down"
+echo "   $DOCKER_COMPOSE down"
 echo ""
 echo "=========================================="

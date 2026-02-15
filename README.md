@@ -17,8 +17,7 @@ A production-ready server for managing printers and print jobs using Salesforce 
 ```bash
 git clone https://github.com/v29tnr/salesforce-printer-server.git
 cd salesforce-printer-server
-chmod +x install.sh
-./install.sh
+make install
 ```
 
 The installer will:
@@ -29,23 +28,33 @@ The installer will:
 
 **That's it!** 🎉
 
-## Management Commands
+## Quick Commands
+
+**One-line commands for everything:**
 
 ```bash
-# View logs
-docker compose logs -f
+make install    # First-time setup
+make update     # Pull latest code and rebuild
+make start      # Start the service
+make stop       # Stop the service
+make restart    # Restart the service
+make logs       # View live logs
+make config     # Edit configuration
+make status     # Check service status
+```
 
-# Stop service
-docker compose down
+## Traditional Commands (if make not available)
 
-# Restart service
-docker compose restart
+```bash
+# Setup & Updates
+chmod +x install.sh update.sh && ./install.sh  # Install
+git pull && docker compose build --no-cache && docker compose up -d --force-recreate  # Update
 
-# Update to latest version
-./update.sh
-
-# Uninstall
-./uninstall.sh
+# Service Management
+docker compose logs -f         # View logs
+docker compose down            # Stop service
+docker compose restart         # Restart service
+docker compose up -d           # Start
 ```
 
 ## Requirements

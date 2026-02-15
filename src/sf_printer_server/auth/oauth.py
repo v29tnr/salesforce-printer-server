@@ -218,9 +218,9 @@ class SalesforceOAuthClient:
             return False
         
         auth_code = query['code'][0]
-        return self._exchange_code_for_token(auth_code)
+        return self.exchange_code_for_token(auth_code)
     
-    def _exchange_code_for_token(self, auth_code: str) -> bool:
+    def exchange_code_for_token(self, auth_code: str) -> bool:
         """
         Exchange authorization code for access and refresh tokens.
         

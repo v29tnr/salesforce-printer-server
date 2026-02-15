@@ -38,8 +38,9 @@ else
     
     # Run the auth script inside a temporary container
     # Map port 8888 for OAuth callback and run interactively
+    # Set SSH_CONNECTION env var to trigger headless mode
     echo ""
-    $DOCKER_COMPOSE run --rm --service-ports sf-printer-server python3 /app/src/sf_printer_server/auth_setup.py
+    $DOCKER_COMPOSE run --rm --service-ports -e SSH_CONNECTION=true sf-printer-server python3 /app/src/sf_printer_server/auth_setup.py
     
     AUTH_RESULT=$?
     

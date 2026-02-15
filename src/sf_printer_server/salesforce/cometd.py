@@ -1,25 +1,27 @@
 import asyncio
 import logging
 from typing import Optional, Callable
-from aiocometd import Client as CometDClient
-from aiocometd.extensions import Extension
+from aiosfstream import SalesforceStreamingClient
+from aiosfstream.auth import AuthenticatorBase
 
 logger = logging.getLogger(__name__)
 
 
-class BearerTokenAuthExtension(Extension):
-    """Auth extension that adds Bearer token to requests."""
+class TokenAuthenticator(AuthenticatorBase):
+    """Simple authenticator that uses a pre-obtained access token."""
     
-    def __init__(self, access_token):
+    def __init__(self, access_token, instance_url):
+        super().__init__()
         self.access_token = access_token
+        self.instance_url = instance_url
     
-    async def outgoing(self, payload, headers):
-        """Add authorization header to outgoing requests."""
-        headers["Authorization"] = f"Bearer {self.access_token}"
-    
-    async def incoming(self, payload, headers=None):
-        """Process incoming messages (no-op for this extension)."""
-        pass
+    async def authenticate(self):
+        """Return pre-obtained token - no actual authentication needed."""
+        # aiosfstream expects these attributes
+        return {
+            "access_token": self.access_token,
+            "instance_url": self.instance_url
+        }
 
 
 class SalesforceCometD:
@@ -32,7 +34,7 @@ class SalesforceCometD:
         self.username = username
         self.access_token = access_token
         self.instance_url = instance_url
-        self.client: Optional[CometDClient] = None
+        self.client: Optional[SalesforceStreamingClient] = None
         self.event_handler: Optional[Callable] = None
         self.running = False
 
@@ -50,35 +52,24 @@ class SalesforceCometD:
         logger.info(f"CometD endpoint: {self.endpoint}")
         
         try:
-            # Create auth extension with our access token
-            auth_extension = BearerTokenAuthExtension(self.access_token)
+            # Create authenticator with our pre-obtained token
+            authenticator = TokenAuthenticator(self.access_token, self.instance_url)
             
-            # Create CometD client with auth extension
-            client = CometDClient(
-                self.endpoint,
-                extensions=[auth_extension]
-            )
-            
-            async with client:
-                logger.info("Successfully connected to CometD endpoint")
+            # Create streaming client with our custom authenticator
+            async with SalesforceStreamingClient(
+                authenticator=authenticator
+            ) as client:
+                logger.info("Successfully connected to Streaming API")
                 
                 # Subscribe to the channel
-                await client.subscribe(channel)
-                logger.info(f"Subscribed to channel: {channel}")
-                
-                # Listen for messages
-                async for message in client:
+                async for message in client.subscribe(channel):
                     logger.debug(f"Raw message received: {message}")
+                    logger.info(f"Received print job event: {message}")
                     
-                    # Check if this is a data message for our channel
-                    if message.get("channel") == channel and "data" in message:
-                        event_data = message["data"]
-                        logger.info(f"Event data: {event_data}")
-                        
-                        if self.event_handler and self.running:
-                            await self.handle_event(event_data)
-                        elif not self.running:
-                            break
+                    if self.event_handler and self.running:
+                        await self.handle_event(message)
+                    elif not self.running:
+                        break
                         
         except Exception as e:
             logger.error(f"Subscription error: {e}")

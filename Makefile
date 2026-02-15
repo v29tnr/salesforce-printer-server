@@ -37,7 +37,7 @@ restart:
 	@docker compose restart || docker-compose restart
 
 logs:
-	@docker compose logs -f || docker-compose logs -f
+	@(docker compose logs --follow 2>/dev/null || docker-compose logs --follow || docker logs sf-printer-server --follow)
 
 status:
 	@docker compose ps || docker-compose ps

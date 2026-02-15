@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 def authenticate_manual():
     """Manual OAuth for headless/SSH environments."""
     print("\n" + "="*60)
-    print("  Manual OAuth Authentication (Headless Mode)")
+    print("  OAuth Authentication (Callback Server Mode)")
     print("="*60 + "\n")
     
     config = ConfigManager()
@@ -36,37 +36,25 @@ def authenticate_manual():
         redirect_uri='http://localhost:8888/oauth/callback'
     )
     
+    print("A callback server will start on port 8888 to receive the OAuth response.")
+    print()
+    print("Open this URL in your browser:")
+    print()
     auth_url = oauth_client.get_authorization_url()
-    
-    print("Since you're in a headless environment, follow these steps:")
-    print()
-    print("1. Open this URL in a browser ON YOUR LOCAL MACHINE:")
-    print()
     print(f"   {auth_url}")
     print()
-    print("2. Log in to Salesforce")
+    print("After you approve, you'll be redirected back and authentication will complete automatically.")
     print()
-    print("3. You'll be redirected to a URL like:")
-    print("   http://localhost:8888/oauth/callback?code=XXXXXXXXX")
-    print()
-    print("4. Copy the 'code' parameter value (the part after 'code=')")
-    print()
+    input("Press Enter when ready to start the callback server...")
     
-    auth_code = input("Paste the authorization code here: ").strip()
-    
-    if not auth_code:
-        print("❌ No code provided")
-        return False
-    
-    print("\n🔄 Exchanging code for access token...")
-    
-    if oauth_client.exchange_code_for_token(auth_code):
+    # Use the web flow with callback server
+    if oauth_client.authenticate():
         print()
         print("✅ Authentication successful!")
         print("Token saved and will work with Streaming API!")
         return True
     else:
-        print("❌ Failed to exchange code for token")
+        print("❌ Authentication failed")
         return False
 
 

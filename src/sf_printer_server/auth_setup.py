@@ -27,10 +27,11 @@ def authenticate_manual():
     config = ConfigManager()
     client_id = config.get('auth.client_id')
     instance_url = config.get('salesforce.instance_url')
+    client_secret = config.get('auth.client_secret', '')
     
     oauth_client = SalesforceOAuthClient(
         client_id=client_id,
-        client_secret='',
+        client_secret=client_secret,
         instance_url=instance_url,
         redirect_uri='http://localhost:8888/oauth/callback'
     )
@@ -79,6 +80,7 @@ def authenticate_password():
     client_id = config.get('auth.client_id')
     instance_url = config.get('salesforce.instance_url')
     username = config.get('auth.username')
+    client_secret = config.get('auth.client_secret', '')
     
     print("This method requires your password + security token.")
     print()
@@ -100,7 +102,7 @@ def authenticate_password():
     
     oauth_client = SalesforceOAuthClient(
         client_id=client_id,
-        client_secret='',
+        client_secret=client_secret,
         instance_url=instance_url
     )
     

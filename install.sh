@@ -209,7 +209,7 @@ docker build -t sf-printer-server . -q
 # Start service
 echo ""
 echo -e "${BLUE}🚀 Starting service...${NC}"
-docker-compose up -d
+docker compose up -d
 
 # Wait a moment
 sleep 2
@@ -224,10 +224,10 @@ if docker ps | grep -q sf-printer-server; then
     echo "Service is running!"
     echo ""
     echo "Useful commands:"
-    echo "  • View logs:    docker-compose logs -f"
-    echo "  • Stop service: docker-compose down"
-    echo "  • Restart:      docker-compose restart"
-    echo "  • Status:       docker-compose ps"
+    echo "  • View logs:    docker compose logs -f"
+    echo "  • Stop service: docker compose down"
+    echo "  • Restart:      docker compose restart"
+    echo "  • Status:       docker compose ps"
     echo ""
 else
     echo ""

@@ -33,13 +33,13 @@ The installer will:
 
 ```bash
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Stop service
-docker-compose down
+docker compose down
 
 # Restart service
-docker-compose restart
+docker compose restart
 
 # Update to latest version
 ./update.sh

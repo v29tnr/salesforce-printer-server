@@ -25,7 +25,7 @@ fi
 
 # Stop service
 echo "🛑 Stopping service..."
-docker-compose down
+docker compose down
 
 # Rebuild image
 echo "🏗️  Rebuilding Docker image..."
@@ -33,9 +33,9 @@ docker build -t sf-printer-server .
 
 # Start service
 echo "🚀 Starting service..."
-docker-compose up -d
+docker compose up -d
 
 echo ""
 echo -e "${GREEN}✅ Update complete!${NC}"
 echo ""
-echo "View logs: docker-compose logs -f"
+echo "View logs: docker compose logs -f"

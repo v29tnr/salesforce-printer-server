@@ -23,7 +23,7 @@ fi
 
 # Stop and remove containers
 echo "🛑 Stopping containers..."
-docker-compose down
+docker compose down
 
 # Remove image
 echo "🗑️  Removing Docker image..."

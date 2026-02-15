@@ -1,52 +1,87 @@
 # Salesforce Printer Server
 
-## Overview
-The Salesforce Printer Server is a robust application designed to manage print jobs and printers using Salesforce's platform events. It listens for print job events via the CometD protocol and interacts with custom Salesforce objects for printers and print jobs.
+A production-ready server for managing printers and print jobs using Salesforce Platform Events.
 
 ## Features
-- Listens to platform events for print jobs.
-- Supports ZPL (Zebra Programming Language) for print job content.
-- Managed via a command-line interface for easy configuration and updates.
-- Utilizes OAuth for secure authentication with Salesforce.
-- Configurable through a TOML file with default settings provided.
+- 🔄 Real-time event listening via Salesforce Streaming API
+- 🖨️ ZPL (Zebra Programming Language) support
+- 🔐 JWT or OAuth authentication
+- 🐋 Docker containerized deployment
+- 📝 Simple TOML configuration
+- 🚀 One-command installation
 
-## Installation
-1. **Clone the repository:**
-   ```
-   git clone <repository-url>
-   cd salesforce-printer-server
-   ```
+## Quick Install
 
-2. **Install dependencies:**
-   ```
-   pip install -r requirements.txt
-   ```
+**On your Linux server:**
 
-3. **Run the installer:**
-   ```
-   python src/sf_printer_server/installer.py
-   ```
-   Follow the prompts to set up your Salesforce connected app and configure the server.
-
-## Configuration
-The configuration file is located at `src/sf_printer_server/config/defaults.toml`. You can customize settings such as:
-- Salesforce client ID and secret
-- Printer settings
-- Print job processing options
-
-## Command Line Interface
-The application provides a command-line interface for managing the printer server. Use the following command to access help:
+```bash
+git clone https://github.com/v29tnr/salesforce-printer-server.git
+cd salesforce-printer-server
+chmod +x install.sh
+./install.sh
 ```
-python src/sf_printer_server/cli.py help
+
+The installer will:
+- ✅ Install Docker (if needed)
+- ✅ Generate SSL certificates
+- ✅ Guide you through Salesforce setup
+- ✅ Configure and start the service
+
+**That's it!** 🎉
+
+## Management Commands
+
+```bash
+# View logs
+docker-compose logs -f
+
+# Stop service
+docker-compose down
+
+# Restart service
+docker-compose restart
+
+# Update to latest version
+./update.sh
+
+# Uninstall
+./uninstall.sh
 ```
+
+## Requirements
+- Linux server (Ubuntu, Debian, CentOS, etc.)
+- Docker (auto-installed if missing)
+- Salesforce org with API access
 
 ## Documentation
-For detailed setup instructions and usage, refer to the documentation in the `docs` directory:
-- [General Documentation](docs/README.md)
-- [Salesforce Setup Instructions](docs/SALESFORCE_SETUP.md)
+- [Full Deployment Guide](DEPLOYMENT.md) - Detailed deployment options
+- [Salesforce Setup](docs/SALESFORCE_SETUP.md) - Salesforce configuration
+- [Authentication Guide](docs/AUTHENTICATION.md) - Auth setup details
 
-## Contributing
-Contributions are welcome! Please submit a pull request or open an issue for any enhancements or bug fixes.
+## Configuration
+
+Configuration is stored in `config/config.toml`:
+
+```toml
+[salesforce]
+instance_url = "https://login.salesforce.com"
+
+[auth]
+method = "jwt"
+client_id = "YOUR_CONSUMER_KEY"
+username = "integration.user@company.com"
+private_key_file = "/app/certs/private_key.pem"
+
+[printer]
+default_printer = "Zebra_Printer"
+zpl_enabled = true
+```
+
+## Support
+
+Questions? Issues?
+- 📖 Check the [docs](docs/) directory
+- 🐛 [Open an issue](https://github.com/v29tnr/salesforce-printer-server/issues)
 
 ## License
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.
+MIT License - See [LICENSE](LICENSE) file

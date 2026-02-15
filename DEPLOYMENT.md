@@ -82,16 +82,15 @@ cd ..
 4. **Scroll down to Flow Enablement**:
    - ✓ **Enable JWT Bearer Flow**
    - **Upload Certificate**: `certificate.crt` file from your `certs/` directory
-5. Click **Save** and wait 2-10 minutes
-6. After saving, click **Manage → Edit Policies**:
-   - **Permitted Users**: Admin approved users are pre-authorized
-   - Click **Save**
-7. Click **Manage Profiles** or **Manage Permission Sets**:
-   - Add your integration user's profile/permission set
+5. Click **Save** and wait 2-10 minutes for changes to take effect
+
+> **Note**: With JWT Bearer Flow, the "Permitted Users" setting will be greyed out - this is normal. JWT uses server-to-server authentication and doesn't require user approval policies.
+
+6. Ensure your integration user has **API access** enabled in their profile/permission set
 
 #### Get Consumer Key
-1. Go back to your Connected App
-2. Click **View** or **Manage**
+1. Go back to your Connected App (Setup → App Manager)
+2. Click the dropdown arrow → **View** or **Manage**
 3. Copy the **Consumer Key** and paste it into `config/config.toml` as `client_id`
 
 ### 6. Start the server

@@ -3,17 +3,17 @@ FROM python:3.9-slim
 # Set the working directory
 WORKDIR /app
 
-# Copy the requirements file and install dependencies
-COPY pyproject.toml .
-COPY setup.cfg .
-RUN pip install --no-cache-dir .
+# Copy all project files needed for installation
+COPY pyproject.toml setup.cfg MANIFEST.in README.md ./
+COPY src/ ./src/
 
-# Copy the source code into the container
-COPY src/sf_printer_server /app/src/sf_printer_server
+# Install the package
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir .
 
-# Copy scripts and examples
-COPY scripts /app/scripts
-COPY examples /app/examples
+# Copy additional files
+COPY scripts ./scripts
+COPY examples ./examples
 
 # Expose any necessary ports (if applicable)
 # EXPOSE 8000

@@ -2,8 +2,24 @@ import asyncio
 import logging
 from typing import Optional, Callable
 from aiocometd import Client as CometDClient
+from aiocometd.extensions import Extension
 
 logger = logging.getLogger(__name__)
+
+
+class BearerTokenAuthExtension(Extension):
+    """Auth extension that adds Bearer token to requests."""
+    
+    def __init__(self, access_token):
+        self.access_token = access_token
+    
+    async def outgoing(self, payload, headers):
+        """Add authorization header to outgoing requests."""
+        headers["Authorization"] = f"Bearer {self.access_token}"
+    
+    async def incoming(self, payload, headers=None):
+        """Process incoming messages (no-op for this extension)."""
+        pass
 
 
 class SalesforceCometD:
@@ -16,7 +32,7 @@ class SalesforceCometD:
         self.username = username
         self.access_token = access_token
         self.instance_url = instance_url
-        self.client: Optional[SalesforceStreamingClient] = None
+        self.client: Optional[CometDClient] = None
         self.event_handler: Optional[Callable] = None
         self.running = False
 
@@ -34,15 +50,13 @@ class SalesforceCometD:
         logger.info(f"CometD endpoint: {self.endpoint}")
         
         try:
-            # Use aiocometd directly with our pre-obtained access token
-            # This avoids aiosfstream's built-in authentication
+            # Create auth extension with our access token
+            auth_extension = BearerTokenAuthExtension(self.access_token)
             
-            # Create CometD client with Salesforce headers
+            # Create CometD client with auth extension
             client = CometDClient(
                 self.endpoint,
-                auth={
-                    "Authorization": f"Bearer {self.access_token}"
-                }
+                extensions=[auth_extension]
             )
             
             async with client:

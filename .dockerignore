@@ -43,10 +43,6 @@ htmlcov/
 # Documentation source (built docs can be included if needed)
 docs/
 
-# Examples and scripts (not needed in production image)
-examples/
-scripts/
-
 # Logs
 *.log
 

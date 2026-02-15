@@ -52,11 +52,15 @@ async def start_server():
         instance_url = config.get('salesforce.instance_url')
         client_id = config.get('auth.client_id')
         
+        # Get the actual instance URL from the OAuth response
+        actual_instance_url = auth_manager.oauth_client.instance_url_from_token or instance_url
+        
         cometd = SalesforceCometD(
-            endpoint=f"{instance_url}/cometd/57.0",
+            endpoint=f"{actual_instance_url}/cometd/57.0",
             client_id=client_id,
             client_secret=config.get('auth.client_secret', ''),
-            access_token=access_token
+            access_token=access_token,
+            instance_url=actual_instance_url
         )
         
         await cometd.start()

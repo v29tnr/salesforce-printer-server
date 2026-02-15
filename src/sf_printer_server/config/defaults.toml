@@ -1,0 +1,74 @@
+[salesforce]
+# Salesforce instance URL
+# Use https://login.salesforce.com for production
+# Use https://test.salesforce.com for sandboxes
+instance_url = "https://login.salesforce.com"
+# Salesforce API version (e.g., "59.0", "60.0")
+api_version = "60.0"
+# Platform Event API name (without __e suffix)
+platform_event_name = "Print_Job__e"
+
+[auth]
+# Authentication method: jwt, password, or web
+# RECOMMENDED: Use 'jwt' for production (most secure, no user interaction)
+method = "jwt"
+
+# Connected App Consumer Key (required for all methods)
+client_id = ""
+
+# For JWT method (RECOMMENDED for production):
+# Username of the integration user
+username = ""
+# Path to private key file for JWT authentication
+private_key_file = ""
+
+# For password method (testing only):
+# client_secret = ""
+# username = ""
+# password = "" # Password + Security Token concatenated
+
+# For web method (interactive, one-time setup):
+# client_secret = ""
+# redirect_uri = "http://localhost:8888/oauth/callback"
+
+[server]
+# Enable ZPL support
+zpl_enabled = true
+# Connection timeout for printers (seconds)
+printer_timeout = 10
+# Max retries for failed print jobs
+max_retries = 3
+
+[logging]
+# Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+log_level = "INFO"
+# Log file path (leave empty for console only)
+log_file = ""
+
+# Printer configurations
+# Each printer should have a unique ID and configuration
+# Supported types: zpl (Zebra ZPL over TCP), cups (CUPS/IPP), raw (Raw TCP/IP)
+
+[[printers]]
+id = "zebra_01"
+name = "Zebra Label Printer 1"
+type = "zpl"
+host = "192.168.1.100"
+port = 9100
+enabled = true
+
+[[printers]]
+id = "office_printer"
+name = "Office Laser Printer"
+type = "cups"
+queue = "HP_LaserJet"
+enabled = true
+
+# Example: Raw TCP printer
+# [[printers]]
+# id = "receipt_printer"
+# name = "Receipt Printer"
+# type = "raw"
+# host = "192.168.1.150"
+# port = 9100
+# enabled = true

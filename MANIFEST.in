@@ -1,0 +1,11 @@
+include *.py
+include *.toml
+include *.json
+include *.md
+include LICENSE
+include Dockerfile
+include scripts/*
+include examples/*
+include docs/*
+recursive-include src/sf_printer_server *
+recursive-include tests *

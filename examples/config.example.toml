@@ -1,0 +1,27 @@
+# Example configuration for Salesforce Printer Server
+
+# Salesforce Connected App Configuration
+[connected_app]
+client_id = "YOUR_CLIENT_ID"
+client_secret = "YOUR_CLIENT_SECRET"
+callback_url = "YOUR_CALLBACK_URL"
+
+# Printer Configuration
+[printers]
+default_printer = "YOUR_DEFAULT_PRINTER_ID"
+
+# Print Job Configuration
+[print_jobs]
+zpl_enabled = true
+max_retries = 3
+retry_delay = 5
+
+# Logging Configuration
+[logging]
+level = "INFO"
+log_file = "printer_server.log"
+
+# Platform Events Configuration
+[platform_events]
+event_name = "YOUR_EVENT_NAME"
+subscription_url = "YOUR_SUBSCRIPTION_URL"

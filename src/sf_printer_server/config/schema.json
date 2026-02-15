@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "salesforce": {
+      "type": "object",
+      "properties": {
+        "instance_url": {
+          "type": "string",
+          "description": "The URL of the Salesforce instance (e.g., https://your-domain.my.salesforce.com)",
+          "pattern": "^https://.*$"
+        },
+        "api_version": {
+          "type": "string",
+          "description": "The Salesforce API version to use (e.g., '59.0', '60.0')",
+          "pattern": "^[0-9]+\\.[0-9]+$",
+          "default": "60.0"
+        },
+        "client_id": {
+          "type": "string",
+          "description": "The client ID (consumer key) for the connected app"
+        },
+        "client_secret": {
+          "type": "string",
+          "description": "The client secret (consumer secret) for the connected app"
+        },
+        "platform_event_name": {
+          "type": "string",
+          "description": "The API name of the Platform Event (without __e suffix)",
+          "default": "Print_Job__e"
+        }
+      },
+      "required": ["instance_url", "api_version", "client_id", "client_secret", "platform_event_name"]
+    },
+    "printer": {
+      "type": "object",
+      "properties": {
+        "api_url": {
+          "type": "string",
+          "description": "The URL of the printer API"
+        },
+        "default_printer_id": {
+          "type": "string",
+          "description": "The default printer ID to use"
+        },
+        "zpl_enabled": {
+          "type": "boolean",
+          "description": "Whether ZPL printing is enabled",
+          "default": true
+        }
+      },
+      "required": ["api_url"]
+    },
+    "logging": {
+      "type": "object",
+      "properties": {
+        "log_level": {
+          "type": "string",
+          "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+          "description": "The logging level",
+          "default": "INFO"
+        }
+      }
+    }
+  },
+  "required": ["salesforce", "printer"]
+}

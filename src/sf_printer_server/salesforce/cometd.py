@@ -1,25 +1,10 @@
 import asyncio
 import logging
+import json
 from typing import Optional, Callable
-from aiosfstream import SalesforceStreamingClient
-from aiosfstream.auth import AuthenticatorBase
+import aiohttp
 
 logger = logging.getLogger(__name__)
-
-
-class TokenAuthenticator(AuthenticatorBase):
-    """Simple authenticator that uses a pre-obtained access token."""
-    
-    def __init__(self, access_token, instance_url):
-        super().__init__()
-        self.access_token = access_token
-        self.instance_url = instance_url
-    
-    async def _authenticate(self):
-        """Return pre-obtained token - no actual authentication needed."""
-        # aiosfstream will use self.access_token and self.instance_url
-        # No actual authentication needed since we already have the token
-        pass
 
 
 class SalesforceCometD:
@@ -32,17 +17,19 @@ class SalesforceCometD:
         self.username = username
         self.access_token = access_token
         self.instance_url = instance_url
-        self.client: Optional[SalesforceStreamingClient] = None
+        self.client_id = client_id
         self.event_handler: Optional[Callable] = None
         self.running = False
+        self.session: Optional[aiohttp.ClientSession] = None
+        self.client_id_counter = 0
 
     async def authenticate(self):
         """Authenticate with Salesforce."""
-        # Authentication is handled by the streaming client
-        logger.info("Authenticating with Salesforce...")
+        # Authentication is already done, we have a token
+        logger.info("Using pre-authenticated access token")
         
     async def subscribe_to_events(self, channel, handler):
-        """Subscribe to a platform event channel."""
+        """Subscribe to a platform event channel using direct CometD protocol."""
         self.event_handler = handler
         
         logger.info(f"Subscribing to channel: {channel}")
@@ -50,35 +37,113 @@ class SalesforceCometD:
         logger.info(f"CometD endpoint: {self.endpoint}")
         
         try:
-            # Create authenticator with our pre-obtained token
-            authenticator = TokenAuthenticator(self.access_token, self.instance_url)
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Content-Type": "application/json"
+            }
             
-            # Create streaming client - pass authenticator via _authenticator private attr
-            client = SalesforceStreamingClient(
-                consumer_key=self.client_id,
-                consumer_secret=self.client_secret or ''
-            )
-            
-            # Override the client's authenticator with ours
-            client._authenticator = authenticator
-            
-            async with client:
-                logger.info("Successfully connected to Streaming API")
+            async with aiohttp.ClientSession(headers=headers) as session:
+                self.session = session
                 
-                # Subscribe to the channel
-                async for message in client.subscribe(channel):
-                    logger.debug(f"Raw message received: {message}")
-                    logger.info(f"Received print job event: {message}")
+                # Handshake
+                logger.info("Performing CometD handshake...")
+                handshake_msg = [{
+                    "channel": "/meta/handshake",
+                    "version": "1.0",
+                    "supportedConnectionTypes": ["long-polling"],
+                    "id": str(self._next_id())
+                }]
+                
+                async with session.post(self.endpoint, json=handshake_msg) as resp:
+                    handshake_response = await resp.json()
+                    logger.info(f"Handshake response: {handshake_response}")
                     
-                    if self.event_handler and self.running:
-                        await self.handle_event(message)
-                    elif not self.running:
-                        break
+                    if not handshake_response[0].get("successful"):
+                        error_msg = handshake_response[0].get("error", "Unknown error")
+                        raise Exception(f"Handshake failed: {error_msg}")
+                    
+                    client_id = handshake_response[0]["clientId"]
+                    logger.info(f"✓ Handshake successful, clientId: {client_id}")
+                
+                # Connect
+                logger.info("Connecting to CometD...")
+                connect_msg = [{
+                    "channel": "/meta/connect",
+                    "clientId": client_id,
+                    "connectionType": "long-polling",
+                    "id": str(self._next_id())
+                }]
+                
+                async with session.post(self.endpoint, json=connect_msg) as resp:
+                    connect_response = await resp.json()
+                    logger.info(f"Connect response: {connect_response}")
+                    
+                    if not connect_response[0].get("successful"):
+                        raise Exception(f"Connect failed: {connect_response[0]}")
+                    
+                    logger.info("✓ Connected to CometD")
+                
+                # Subscribe to channel
+                logger.info(f"Subscribing to {channel}...")
+                subscribe_msg = [{
+                    "channel": "/meta/subscribe",
+                    "clientId": client_id,
+                    "subscription": channel,
+                    "id": str(self._next_id())
+                }]
+                
+                async with session.post(self.endpoint, json=subscribe_msg) as resp:
+                    subscribe_response = await resp.json()
+                    logger.info(f"Subscribe response: {subscribe_response}")
+                    
+                    if not subscribe_response[0].get("successful"):
+                        raise Exception(f"Subscribe failed: {subscribe_response[0]}")
+                    
+                    logger.info(f"✓ Subscribed to channel: {channel}")
+                
+                # Long-polling loop to receive messages
+                logger.info("Listening for events...")
+                while self.running:
+                    poll_msg = [{
+                        "channel": "/meta/connect",
+                        "clientId": client_id,
+                        "connectionType": "long-polling",
+                        "id": str(self._next_id())
+                    }]
+                    
+                    try:
+                        async with session.post(self.endpoint, json=poll_msg, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                            messages = await resp.json()
+                            
+                            for message in messages:
+                                msg_channel = message.get("channel")
+                                
+                                # Handle data messages
+                                if msg_channel == channel and "data" in message:
+                                    logger.info(f"Received event on {channel}: {message['data']}")
+                                    if self.event_handler:
+                                        await self.handle_event(message["data"])
+                                
+                                # Log other message types
+                                elif msg_channel and msg_channel.startswith("/meta/"):
+                                    logger.debug(f"Meta message: {message}")
+                    
+                    except asyncio.TimeoutError:
+                        logger.debug("Long-poll timeout, reconnecting...")
+                        continue
+                    except Exception as e:
+                        logger.error(f"Poll error: {e}")
+                        await asyncio.sleep(5)  # Wait before retry
                         
         except Exception as e:
             logger.error(f"Subscription error: {e}")
             logger.exception("Full traceback:")
             raise
+    
+    def _next_id(self):
+        """Get next message ID."""
+        self.client_id_counter += 1
+        return self.client_id_counter
 
     async def handle_event(self, event):
         """Process incoming event."""
@@ -97,8 +162,8 @@ class SalesforceCometD:
     async def stop(self):
         """Stop the CometD client."""
         self.running = False
-        if self.client:
-            await self.client.close()
+        if self.session:
+            await self.session.close()
         logger.info(f"Disconnected from CometD endpoint: {self.endpoint}")
 
 

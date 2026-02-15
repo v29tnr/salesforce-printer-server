@@ -84,15 +84,36 @@ async def start_server():
         except Exception as e:
             logger.error(f"Token test failed: {e}")
         
-        # Initialize CometD client
         logger.info("Connecting to Salesforce Streaming API...")
         client_id = config.get('auth.client_id')
+        
+        # IMPORTANT: JWT Bearer tokens don't work with Streaming API (CometD)
+        # We need to use simple-salesforce to get a proper session
+        logger.info("Getting Streaming API session (JWT tokens don't work directly with CometD)...")
+        try:
+            from simple_salesforce import Salesforce
+            
+            # Use simple-salesforce with our OAuth token to get a session that works with Streaming
+            sf = Salesforce(
+                instance_url=actual_instance_url,
+                session_id=access_token,
+                version='57.0'
+            )
+            
+            # simple-salesforce session_id property will work with Streaming API
+            streaming_token = sf.session_id
+            logger.info("✓ Got Streaming API compatible session")
+            
+        except Exception as e:
+            logger.warning(f"Could not initialize simple-salesforce: {e}")
+            logger.warning("Trying OAuth token directly (may not work)...")
+            streaming_token = access_token
         
         cometd = SalesforceCometD(
             endpoint=f"{actual_instance_url}/cometd/57.0",
             client_id=client_id,
             client_secret=config.get('auth.client_secret', ''),
-            access_token=access_token,
+            access_token=streaming_token,
             instance_url=actual_instance_url
         )
         

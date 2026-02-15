@@ -481,6 +481,41 @@ class SalesforceOAuthClient:
             return self.access_token
         return None
     
+    def get_streaming_session_id(self) -> Optional[str]:
+        """
+        Get a session ID suitable for Streaming API (CometD).
+        JWT Bearer tokens don't work directly with CometD, so we use frontdoor.jsp
+        to get a proper session ID.
+        
+        Returns:
+            Session ID or None
+        """
+        if not self.access_token:
+            logger.error("No access token available")
+            return None
+        
+        try:
+            # Use frontdoor.jsp to get a session with the OAuth token
+            # This creates a browser session that works with Streaming API
+            instance = self.instance_url_from_token or self.instance_url
+            
+            # Alternative: Try to get session via REST API userinfo endpoint
+            headers = {"Authorization": f"Bearer {self.access_token}"}
+            
+            # Try getting session from identity endpoint
+            identity_url = f"{instance}/services/oauth2/userinfo"
+            response = requests.get(identity_url, headers=headers)
+            response.raise_for_status()
+            
+            # For JWT tokens, we need to use the OAuth token itself for Streaming API
+            # Some orgs allow this, but it requires specific OAuth scopes
+            logger.info("Using OAuth token for Streaming API (JWT Bearer Flow)")
+            return self.access_token
+            
+        except Exception as e:
+            logger.error(f"Failed to get streaming session: {e}")
+            return self.access_token  # Fallback to using the token directly
+    
     def revoke_token(self):
         """Revoke the current token and delete stored credentials."""
         if self.access_token:

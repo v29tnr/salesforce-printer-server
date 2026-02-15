@@ -48,7 +48,7 @@ def authenticate_manual():
     input("Press Enter when ready to start the callback server...")
     
     # Use the web flow with callback server
-    if oauth_client.authenticate():
+    if oauth_client.authenticate_web_server_flow():
         print()
         print("✅ Authentication successful!")
         print("Token saved and will work with Streaming API!")

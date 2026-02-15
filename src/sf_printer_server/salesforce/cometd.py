@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from typing import Optional, Callable
-from aiosfstream import SalesforceStreamingClient, RefreshTokenAuthenticator
+from aiocometd import Client as CometDClient
 
 logger = logging.getLogger(__name__)
 
@@ -34,30 +34,37 @@ class SalesforceCometD:
         logger.info(f"CometD endpoint: {self.endpoint}")
         
         try:
-            # Create a custom auth with our pre-obtained token
-            # aiosfstream doesn't directly support passing access tokens
-            # so we need to use password auth with empty password and override
-            import aiosfstream
+            # Use aiocometd directly with our pre-obtained access token
+            # This avoids aiosfstream's built-in authentication
             
-            # Create streaming client  
-            async with SalesforceStreamingClient(
-                consumer_key=self.client_id,
-                consumer_secret=self.client_secret or '',
-                username='dummy',  # Required but not used
-                password='dummy'   # Required but not used
-            ) as client:
-                # Manually inject our access token
-                client._auth.access_token = self.access_token
-                client._auth.instance_url = self.instance_url
-                
-                logger.info("Successfully connected to Streaming API")
+            # Create CometD client with Salesforce headers
+            client = CometDClient(
+                self.endpoint,
+                auth={
+                    "Authorization": f"Bearer {self.access_token}"
+                }
+            )
+            
+            async with client:
+                logger.info("Successfully connected to CometD endpoint")
                 
                 # Subscribe to the channel
-                async for message in client.subscribe(channel):
-                    if self.event_handler and self.running:
-                        await self.handle_event(message)
-                    elif not self.running:
-                        break
+                await client.subscribe(channel)
+                logger.info(f"Subscribed to channel: {channel}")
+                
+                # Listen for messages
+                async for message in client:
+                    logger.debug(f"Raw message received: {message}")
+                    
+                    # Check if this is a data message for our channel
+                    if message.get("channel") == channel and "data" in message:
+                        event_data = message["data"]
+                        logger.info(f"Event data: {event_data}")
+                        
+                        if self.event_handler and self.running:
+                            await self.handle_event(event_data)
+                        elif not self.running:
+                            break
                         
         except Exception as e:
             logger.error(f"Subscription error: {e}")

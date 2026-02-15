@@ -53,9 +53,16 @@ class SalesforceOAuthClient:
         if token_file:
             self.token_file = Path(token_file)
         else:
-            config_dir = Path.home() / '.sf_printer_server'
-            config_dir.mkdir(exist_ok=True)
-            self.token_file = config_dir / 'oauth_token.json'
+            # Check if running in Docker (config mounted at /app/config)
+            docker_config = Path('/app/config')
+            if docker_config.exists() and docker_config.is_dir():
+                # Running in Docker - save token in mounted config directory
+                self.token_file = docker_config / 'oauth_token.json'
+            else:
+                # Running natively - use home directory
+                config_dir = Path.home() / '.sf_printer_server'
+                config_dir.mkdir(exist_ok=True)
+                self.token_file = config_dir / 'oauth_token.json'
         
         self.access_token = None
         self.refresh_token = None

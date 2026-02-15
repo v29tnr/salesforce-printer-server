@@ -297,13 +297,22 @@ class SalesforceOAuthClient:
                     backend=default_backend()
                 )
             
+            # Determine correct audience for JWT
+            # Must be login.salesforce.com or test.salesforce.com, not My Domain
+            if 'test.salesforce' in self.instance_url or 'sandbox' in self.instance_url:
+                aud = 'https://test.salesforce.com'
+            else:
+                aud = 'https://login.salesforce.com'
+            
             # Create JWT
             claim = {
                 'iss': self.client_id,
                 'sub': username,
-                'aud': self.instance_url,
+                'aud': aud,
                 'exp': int(time.time()) + 300  # 5 minutes
             }
+            
+            logger.debug(f"JWT claim: iss={self.client_id}, sub={username}, aud={aud}")
             
             assertion = jwt.encode(claim, private_key, algorithm='RS256')
             
@@ -324,8 +333,23 @@ class SalesforceOAuthClient:
             logger.info("Successfully obtained access token via JWT")
             return True
             
-        except Exception as e:
+        except requests.exceptions.RequestException as e:
             logger.error(f"JWT authentication failed: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_detail = e.response.json()
+                    logger.error(f"Salesforce error: {error_detail}")
+                    logger.error(f"Common causes:")
+                    logger.error(f"  1. Connected App not yet active (wait 2-10 minutes after creation)")
+                    logger.error(f"  2. User '{username}' not authorized for this Connected App")
+                    logger.error(f"  3. Certificate doesn't match private key")
+                    logger.error(f"  4. User doesn't have API access enabled")
+                except:
+                    logger.error(f"Response: {e.response.text}")
+            return False
+        except Exception as e:
+            logger.error(f"JWT authentication error: {e}")
+            logger.exception("Full traceback:")
             return False
     
     def refresh_access_token(self) -> bool:

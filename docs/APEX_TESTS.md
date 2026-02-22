@@ -4,11 +4,11 @@ Run these in **Developer Console → Execute Anonymous** (or Setup → Apex → 
 
 ---
 
-## 1. PDF via Salesforce File (ContentDocument ID — recommended)
+## 1. PDF via Salesforce File (`contentDocumentId` → `pdf_uri` — recommended)
 
 The easiest path for admins.  
 Uploads a minimal PDF as a Salesforce File, then sends it using `contentDocumentId`.  
-The server fetches the file itself — no URL or auth config needed.
+Internally the service builds a `pdf_uri` pointing to the ContentVersion download endpoint — the server fetches it using its own Bearer token. No URL or auth config needed.
 
 ```apex
 // ── 1. Create a test file ────────────────────────────────────────────────────
@@ -58,9 +58,8 @@ System.debug('Job sent.');
 
 ## 2. PDF via Download URL (`pdf_uri`)
 
-Useful when the file already exists in Salesforce and you want to build the URL manually,
-or when sending a PDF hosted outside Salesforce (swap `downloadUrl` for any HTTPS URL and
-set `req.authConfig` if the endpoint requires credentials).
+Use this when the file already exists in Salesforce and you want to control the URL yourself,
+or when the PDF is hosted externally (swap `downloadUrl` for any HTTPS URL and set `req.authConfig` if the endpoint requires credentials). The server fetches the bytes at print time — the PDF is never stored in the event payload.
 
 ```apex
 // ── 1. Create a test file ────────────────────────────────────────────────────
@@ -116,7 +115,57 @@ System.debug('Job sent. URL: ' + downloadUrl);
 
 ---
 
-## 3. ZPL via base64 (`raw_base64`)
+## 3. PDF inline as base64 (`pdf_base64`)
+
+The entire PDF is base64-encoded and embedded directly in the platform event payload.
+Use this when the file is small and you want zero external HTTP calls at print time.
+Note: `SF_Printer_Event__e.Content__c` is a LongTextArea(131072) — keep PDFs under ~96 KB.
+
+```apex
+// ── Load an existing ContentVersion as bytes and encode inline ───────────────
+ContentVersion cv = [SELECT VersionData FROM ContentVersion WHERE IsLatest = true LIMIT 1];
+String pdfBase64  = EncodingUtil.base64Encode(cv.VersionData);
+
+// ── Or build a minimal test PDF inline ──────────────────────────────────────
+// String pdfBase64 = EncodingUtil.base64Encode(Blob.valueOf(
+//     '%PDF-1.4\n'
+//     + '1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj '
+//     + '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj '
+//     + '3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R>>endobj\n'
+//     + 'xref\n0 4\n'
+//     + '0000000000 65535 f\n'
+//     + '0000000009 00000 n\n'
+//     + '0000000058 00000 n\n'
+//     + '0000000115 00000 n\n'
+//     + 'trailer<</Size 4/Root 1 0 R>>\n'
+//     + 'startxref\n190\n%%EOF'
+// ));
+
+// ── Look up a printer ────────────────────────────────────────────────────────
+Printer__c printer = [
+    SELECT Id, Name
+    FROM   Printer__c
+    WHERE  Type__c = 'zpl'
+    AND    Enabled__c = true
+    LIMIT  1
+];
+System.debug('Using printer: ' + printer.Name + ' (' + printer.Id + ')');
+
+// ── Fire the job ─────────────────────────────────────────────────────────────
+PrinterService.PrintRequest req = new PrinterService.PrintRequest();
+req.printerId   = printer.Id;
+req.contentType = 'pdf_base64';
+req.content     = pdfBase64;   // full PDF embedded in the event
+req.jobTitle    = 'PDF Base64 Test';
+req.source      = 'Execute Anonymous';
+
+PrinterService.send(new List<PrinterService.PrintRequest>{ req });
+System.debug('PDF base64 job sent (' + pdfBase64.length() + ' chars)');
+```
+
+---
+
+## 4. ZPL via base64 (`raw_base64`)
 
 Sends a raw ZPL label to a `zpl` printer.  
 The server auto-queries the Zebra for DPI/width/darkness and prepends the config block.
@@ -155,7 +204,7 @@ System.debug('ZPL job sent.');
 
 ---
 
-## 4. Raw bytes via base64 (`raw_base64`) — RAW printer
+## 5. Raw bytes via base64 (`raw_base64`) — RAW printer
 
 Same as ZPL but targets a `raw` printer (e.g. receipt / ESC/POS).
 

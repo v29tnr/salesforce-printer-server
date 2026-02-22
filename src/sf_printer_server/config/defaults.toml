@@ -16,6 +16,10 @@ method = "jwt"
 # Connected App Consumer Key (required for all methods)
 client_id = ""
 
+# Connected App Consumer Secret (required for OAuth Username-Password flow)
+# Find it in: App Manager → Your Connected App → View → Consumer Key and Secret
+client_secret = ""
+
 # For JWT method (RECOMMENDED for production):
 # Username of the integration user
 username = ""

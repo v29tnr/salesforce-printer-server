@@ -8,7 +8,6 @@ import logging
 import json
 import io
 import threading
-import xml.etree.ElementTree as et
 from typing import Optional, Callable
 from urllib.parse import urlparse
 import requests
@@ -36,37 +35,38 @@ except ImportError as e:
     pb2_grpc = None
 
 
-def _soap_login(login_url: str, username: str, password: str, api_version: str = "60.0"):
+def _oauth_password_login(login_url: str, client_id: str, client_secret: str, username: str, password: str):
     """
-    Authenticate via Salesforce SOAP API (username + password + security token).
-    Returns (session_id, org_id, instance_url).
-    This mirrors the official Salesforce Pub/Sub API Python example.
-    login_url should be https://login.salesforce.com (prod) or https://test.salesforce.com (sandbox).
+    Authenticate via Salesforce OAuth Username-Password flow.
+    Returns (access_token, org_id, instance_url).
+    Requires 'Allow OAuth Username-Password Flows' enabled in Setup.
+    password should be password+security_token concatenated.
     """
-    url_suffix = f"/services/Soap/u/{api_version}/"
-    headers = {"content-type": "text/xml", "SOAPAction": "Login"}
-    xml = (
-        "<soapenv:Envelope xmlns:soapenv='http://schemas.xmlsoap.org/soap/envelope/' "
-        "xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' "
-        "xmlns:urn='urn:partner.soap.sforce.com'><soapenv:Body>"
-        f"<urn:login><urn:username><![CDATA[{username}]]></urn:username>"
-        f"<urn:password><![CDATA[{password}]]></urn:password>"
-        "</urn:login></soapenv:Body></soapenv:Envelope>"
+    resp = requests.post(
+        f"{login_url}/services/oauth2/token",
+        data={
+            "grant_type": "password",
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "username": username,
+            "password": password,
+        }
     )
-    resp = requests.post(login_url + url_suffix, data=xml, headers=headers)
     if not resp.ok:
-        logger.error(f"SOAP login HTTP {resp.status_code}: {resp.text}")
+        logger.error(f"OAuth password login HTTP {resp.status_code}: {resp.text}")
         resp.raise_for_status()
-    res_xml = et.fromstring(resp.content.decode("utf-8"))[0][0][0]
 
-    url_parts = urlparse(res_xml[3].text)
-    actual_instance_url = f"{url_parts.scheme}://{url_parts.netloc}"
-    session_id = res_xml[4].text
-    uinfo = res_xml[6]
-    org_id = uinfo[8].text
+    token_data = resp.json()
+    access_token = token_data["access_token"]
+    instance_url = token_data["instance_url"]
 
-    logger.info(f"SOAP login successful - org_id: {org_id}, instance_url: {actual_instance_url}")
-    return session_id, org_id, actual_instance_url
+    # Extract org ID from the id URL: https://login.salesforce.com/id/{orgId}/{userId}
+    id_url = token_data.get("id", "")
+    org_id = id_url.rstrip("/").split("/")[-2] if id_url else None
+
+    logger.info(f"OAuth password login successful - org_id: {org_id}, instance_url: {instance_url}")
+    logger.info(f"Token type: {token_data.get('token_type')}, token starts with: {access_token[:10]}...")
+    return access_token, org_id, instance_url
 
 
 class SalesforcePubSubClient:
@@ -99,21 +99,25 @@ class SalesforcePubSubClient:
         self.semaphore = threading.Semaphore(1)
 
     @classmethod
-    def from_soap_auth(cls, username: str, password: str, login_url: str = "https://login.salesforce.com", api_version: str = "60.0"):
+    def from_oauth_password(cls, client_id: str, client_secret: str, username: str, password: str, login_url: str = "https://login.salesforce.com"):
         """
-        Create a PubSubClient authenticated via SOAP login (username + password + security token).
-        This is the method used by the official Salesforce Pub/Sub API example.
-        
+        Create a PubSubClient using OAuth Username-Password flow.
+        Returns an opaque access token compatible with Pub/Sub API.
+        Requires 'Allow OAuth Username-Password Flows' enabled in Salesforce Setup.
+
         Args:
+            client_id: Connected App Consumer Key
+            client_secret: Connected App Consumer Secret
             username: Salesforce username
-            password: Password concatenated with security token (e.g., "MyPass123TokenABC")
-            login_url: Login URL - https://login.salesforce.com (prod) or https://test.salesforce.com (sandbox)
-            api_version: API version string
+            password: Password concatenated with security token
+            login_url: https://login.salesforce.com (prod) or https://test.salesforce.com (sandbox)
         """
-        session_id, org_id, actual_instance_url = _soap_login(login_url, username, password, api_version)
+        access_token, org_id, instance_url = _oauth_password_login(
+            login_url, client_id, client_secret, username, password
+        )
         return cls(
-            access_token=session_id,
-            instance_url=actual_instance_url,
+            access_token=access_token,
+            instance_url=instance_url,
             tenant_id=org_id
         )
 

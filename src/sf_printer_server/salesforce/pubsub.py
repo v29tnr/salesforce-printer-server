@@ -8,7 +8,10 @@ import logging
 import json
 import io
 import threading
+import xml.etree.ElementTree as et
 from typing import Optional, Callable
+from urllib.parse import urlparse
+import requests
 import grpc
 import certifi
 
@@ -33,6 +36,36 @@ except ImportError as e:
     pb2_grpc = None
 
 
+def _soap_login(instance_url: str, username: str, password: str, api_version: str = "60.0"):
+    """
+    Authenticate via Salesforce SOAP API (username + password + security token).
+    Returns (session_id, org_id, instance_url).
+    This mirrors the official Salesforce Pub/Sub API Python example.
+    """
+    url_suffix = f"/services/Soap/u/{api_version}/"
+    headers = {"content-type": "text/xml", "SOAPAction": "Login"}
+    xml = (
+        "<soapenv:Envelope xmlns:soapenv='http://schemas.xmlsoap.org/soap/envelope/' "
+        "xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' "
+        "xmlns:urn='urn:partner.soap.sforce.com'><soapenv:Body>"
+        f"<urn:login><urn:username><![CDATA[{username}]]></urn:username>"
+        f"<urn:password><![CDATA[{password}]]></urn:password>"
+        "</urn:login></soapenv:Body></soapenv:Envelope>"
+    )
+    resp = requests.post(instance_url + url_suffix, data=xml, headers=headers)
+    resp.raise_for_status()
+    res_xml = et.fromstring(resp.content.decode("utf-8"))[0][0][0]
+
+    url_parts = urlparse(res_xml[3].text)
+    actual_instance_url = f"{url_parts.scheme}://{url_parts.netloc}"
+    session_id = res_xml[4].text
+    uinfo = res_xml[6]
+    org_id = uinfo[8].text
+
+    logger.info(f"SOAP login successful - org_id: {org_id}, instance_url: {actual_instance_url}")
+    return session_id, org_id, actual_instance_url
+
+
 class SalesforcePubSubClient:
     """Salesforce Pub/Sub API client using gRPC protocol."""
     
@@ -43,7 +76,7 @@ class SalesforcePubSubClient:
         Initialize the Pub/Sub API client.
         
         Args:
-            access_token: Salesforce OAuth access token
+            access_token: Salesforce OAuth access token or SOAP session ID
             instance_url: Salesforce instance URL (e.g., https://mydomain.my.salesforce.com)
             tenant_id: Salesforce org ID (tenant ID)
         """
@@ -61,7 +94,26 @@ class SalesforcePubSubClient:
         self.stub: Optional[pb2_grpc.PubSubStub] = None
         self.latest_replay_id: Optional[bytes] = None
         self.semaphore = threading.Semaphore(1)
+
+    @classmethod
+    def from_soap_auth(cls, username: str, password: str, instance_url: str, api_version: str = "60.0"):
+        """
+        Create a PubSubClient authenticated via SOAP login (username + password + security token).
+        This is the method used by the official Salesforce Pub/Sub API example.
         
+        Args:
+            username: Salesforce username
+            password: Password concatenated with security token (e.g., "MyPass123TokenABC")
+            instance_url: Login URL (e.g., https://login.salesforce.com or https://test.salesforce.com)
+            api_version: API version string
+        """
+        session_id, org_id, actual_instance_url = _soap_login(instance_url, username, password, api_version)
+        return cls(
+            access_token=session_id,
+            instance_url=actual_instance_url,
+            tenant_id=org_id
+        )
+
     def _get_auth_metadata(self):
         """Get authentication metadata for gRPC calls."""
         return (
@@ -147,19 +199,6 @@ class SalesforcePubSubClient:
             logger.info(f"Auth metadata - instanceurl: {self.instance_url}")
             logger.info(f"Auth metadata - tenantid: {self.tenant_id}")
             logger.info(f"Auth metadata - accesstoken (first 20 chars): {self.access_token[:20]}...")
-            logger.info(f"Auth metadata - accesstoken length: {len(self.access_token)}")
-            # Decode JWT payload to inspect granted scopes (no verification, read-only)
-            try:
-                import base64
-                parts = self.access_token.split('.')
-                if len(parts) == 3:
-                    payload_b64 = parts[1] + '=='  # pad
-                    payload_json = base64.urlsafe_b64decode(payload_b64).decode('utf-8', errors='replace')
-                    logger.info(f"JWT token payload: {payload_json}")
-                else:
-                    logger.info("Access token is not a JWT (no dot-separated parts)")
-            except Exception as jwt_err:
-                logger.info(f"Could not decode token: {jwt_err}")
             
             # Create secure channel
             with grpc.secure_channel(self.PUBSUB_ENDPOINT, creds) as channel_conn:

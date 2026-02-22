@@ -83,15 +83,30 @@ async def start_server():
             logger.error("Could not retrieve org ID. Please check authentication.")
             sys.exit(1)
         
-        # For Pub/Sub API, we can use any valid OAuth token (JWT, Web OAuth, etc.)
-        # Unlike Streaming API (CometD), Pub/Sub API works with all token types
+        # Initialize Pub/Sub API client.
+        # The official Salesforce example authenticates via SOAP login (username + password + security token).
+        # We prefer SOAP auth when streaming_password is configured, as JWT tokens can be rejected
+        # by Pub/Sub API on some org configurations.
         logger.info("Initializing Pub/Sub API client...")
-        
-        pubsub_client = SalesforcePubSubClient(
-            access_token=access_token,
-            instance_url=actual_instance_url,
-            tenant_id=org_id
-        )
+
+        streaming_password = config.get('auth.streaming_password', '')
+        username = config.get('auth.username', '')
+
+        if streaming_password and username:
+            logger.info(f"Using SOAP auth for Pub/Sub API (username: {username})")
+            pubsub_client = SalesforcePubSubClient.from_soap_auth(
+                username=username,
+                password=streaming_password,
+                instance_url=instance_url,
+                api_version=config.get('salesforce.api_version', '60.0')
+            )
+        else:
+            logger.info("Using OAuth JWT token for Pub/Sub API (no streaming_password configured)")
+            pubsub_client = SalesforcePubSubClient(
+                access_token=access_token,
+                instance_url=actual_instance_url,
+                tenant_id=org_id
+            )
         
         pubsub_client.start()
         

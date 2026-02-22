@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>ZPL_Config__c</fullName>
+    <label>ZPL Config</label>
+    <description>JSON ZPL printer config for this job. Populated by Apex/Flow from the Printer__c record before firing the event. The server uses this to prepend a ^PW/^LL/^MD setup block if the label does not already include those commands.
+Format: {"dpi":203,"width_dots":812,"height_dots":1218,"darkness":15,"prefix":"^FX optional"}
+Leave blank to let the server auto-detect via SGD query and cache the result.</description>
+    <type>LongTextArea</type>
+    <length>1024</length>
+    <visibleLines>2</visibleLines>
+</CustomField>

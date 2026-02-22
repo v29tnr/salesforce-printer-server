@@ -13,7 +13,20 @@ import json
 from typing import Optional
 import requests
 from sf_printer_server.jobs.models import PrintJob
-from sf_printer_server.printers.drivers import get_printer_driver
+from sf_printer_server.printers.drivers import get_printer_driver, get_printer_info
+
+# ---------------------------------------------------------------------------
+# TODO (next session): Salesforce response events
+# ---------------------------------------------------------------------------
+# After each job succeeds or fails, publish a SF_Printer_Response__e back to
+# Salesforce via REST POST to /services/data/v60.0/sobjects/SF_Printer_Response__e
+# Fields: Correlation_Id__c, Status__c (success|failed), Error_Message__c, Printed_At__c
+# The auth token is already available from the pubsub client — pass it through.
+# A Salesforce Flow subscribes to SF_Printer_Response__e and upserts Print_Job__c
+# on Correlation_Id__c (ExternalId) to stamp the final status on the record.
+# Also: query_zebra_info / get_printer_info can be exposed via a 'discover' event
+# type so Salesforce can request printer config on demand and receive it in a response.
+# ---------------------------------------------------------------------------
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +91,11 @@ def _handle_print_job(event: dict) -> bool:
 
     try:
         if job.is_raw:
+            # For ZPL printers, auto-prepend a ^PW/^LL/^MD setup block if the
+            # label doesn't already contain those commands.
+            if job.printer_type == 'zpl':
+                content_bytes = _apply_zpl_config(job, content_bytes)
+
             qty = max(1, job.qty)
             for i in range(qty):
                 if not driver.print_raw(content_bytes):
@@ -97,6 +115,46 @@ def _handle_print_job(event: dict) -> bool:
         return False
 
     return True
+
+
+def _apply_zpl_config(job: PrintJob, content_bytes: bytes) -> bytes:
+    """
+    Optionally prepend a ZPL printer setup block (^XA ^PW ^LL ^MD ^XZ) before
+    the label payload.
+
+    Priority:
+      1. ZPL_Config__c from the event (explicit, overrides everything)
+      2. Cached printer info from a previous SGD query
+      3. Fresh SGD query to the printer (result is cached for future jobs)
+
+    Skips prepend if the label already contains ^PW or ^LL — those labels are
+    self-contained templates and don't need the setup block.
+    """
+    # If the label is already self-configuring, leave it alone
+    if b'^PW' in content_bytes or b'^LL' in content_bytes:
+        return content_bytes
+
+    config = job.zpl_config or get_printer_info(job.printer_host, job.printer_port)
+    if not config:
+        return content_bytes
+
+    lines = ['^XA']
+    if 'width_dots' in config:
+        lines.append(f'^PW{int(config["width_dots"])}')
+    if 'height_dots' in config:
+        lines.append(f'^LL{int(config["height_dots"])}')
+    elif 'width_dots' in config and 'dpi' in config:
+        # Derive mm→dots from explicit zpl_config if height_dots not set but dimensions were
+        pass
+    if 'darkness' in config:
+        lines.append(f'^MD{int(config["darkness"])}')
+    if config.get('prefix'):
+        lines.append(str(config['prefix']))
+    lines.append('^XZ')
+
+    prefix = ('\r\n'.join(lines) + '\r\n').encode('ascii')
+    logger.debug(f"Prepending ZPL setup block ({len(prefix)} bytes) for {job.printer_host}:{job.printer_port}")
+    return prefix + content_bytes
 
 
 def _resolve_content(job: PrintJob) -> bytes:

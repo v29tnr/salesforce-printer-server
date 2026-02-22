@@ -29,6 +29,7 @@ class PrintJob:
     options: dict = field(default_factory=dict)     # PDF options JSON blob
     auth_config: dict = field(default_factory=dict) # HTTP auth for *_uri downloads
     correlation_id: str = ''
+    zpl_config: dict = field(default_factory=dict)   # ZPL printer setup (dpi, width_dots, height_dots, darkness, prefix)
 
     @classmethod
     def from_event(cls, event: dict) -> 'PrintJob':
@@ -61,6 +62,7 @@ class PrintJob:
             options=_json(event.get('Options__c')),
             auth_config=_json(event.get('Auth_Config__c')),
             correlation_id=event.get('Correlation_Id__c') or '',
+            zpl_config=_json(event.get('ZPL_Config__c')),
         )
 
     @property

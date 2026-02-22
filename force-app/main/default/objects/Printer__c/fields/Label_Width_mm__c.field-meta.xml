@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Label_Width_mm__c</fullName>
+    <label>Label Width (mm)</label>
+    <description>Physical label width in millimetres. e.g. 101.6 for 4 inch. Converted to dots (width_mm / 25.4 * DPI) for the ZPL ^PW command. Leave blank to auto-detect.</description>
+    <type>Number</type>
+    <precision>6</precision>
+    <scale>2</scale>
+    <required>false</required>
+</CustomField>

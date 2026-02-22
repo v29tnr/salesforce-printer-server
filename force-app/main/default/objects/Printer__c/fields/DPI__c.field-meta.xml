@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>DPI__c</fullName>
+    <label>DPI</label>
+    <description>Printer DPI (dots per inch). Used by the server to compute dot values for ZPL setup. Common values: 203, 300, 600. Leave blank to let the server auto-detect via SGD query.</description>
+    <type>Number</type>
+    <precision>4</precision>
+    <scale>0</scale>
+    <required>false</required>
+</CustomField>

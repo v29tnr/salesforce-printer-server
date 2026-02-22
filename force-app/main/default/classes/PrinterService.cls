@@ -84,12 +84,10 @@ public with sharing class PrinterService {
             Printer__c printer = printers.get(req.printerId);
 
             if (printer == null) {
-                System.debug(LoggingLevel.ERROR, 'PrinterService: Printer__c not found: ' + req.printerId);
-                continue;
+                throw new PrinterServiceException('Printer not found: ' + req.printerId);
             }
             if (printer.Enabled__c == false) {
-                System.debug(LoggingLevel.WARN, 'PrinterService: Printer is disabled, skipping: ' + printer.Name);
-                continue;
+                throw new PrinterServiceException('Printer \'' + printer.Name + '\' is disabled. Enable it on the Printer record before sending jobs.');
             }
 
             SF_Printer_Event__e evt = new SF_Printer_Event__e();
@@ -101,7 +99,7 @@ public with sharing class PrinterService {
             evt.Content__c      = req.content;
             evt.Correlation_Id__c = String.isNotBlank(req.correlationId)
                 ? req.correlationId
-                : generateCorrelationId(req.printerId, req.content);
+                : generateUUID();
             evt.Job_Title__c    = req.jobTitle;
             evt.Source__c       = req.source;
             evt.Qty__c          = req.qty != null ? req.qty : 1;
@@ -164,14 +162,19 @@ public with sharing class PrinterService {
     }
 
     /**
-     * Generate a deterministic correlation ID when none is provided.
-     * Stable for the same printer + content — provides basic idempotency.
+     * Generate a random UUID v4-format correlation ID.
+     * Uses 128-bit crypto-random bytes — unique across all users and orgs.
+     * Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
      */
-    private static String generateCorrelationId(Id printerId, String content) {
-        String raw = String.valueOf(printerId)
-            + String.valueOf(Datetime.now().getTime())
-            + (content != null ? content.left(20) : '');
-        Blob hash = Crypto.generateDigest('SHA-256', Blob.valueOf(raw));
-        return EncodingUtil.convertToHex(hash).left(36);
+    private static String generateUUID() {
+        Blob b = Crypto.generateAesKey(128);
+        String h = EncodingUtil.convertToHex(b);  // 32 hex chars
+        return h.substring(0, 8)  + '-' +
+               h.substring(8, 12) + '-' +
+               '4' + h.substring(13, 16) + '-' +
+               h.substring(16, 20) + '-' +
+               h.substring(20, 32);
     }
+
+    public class PrinterServiceException extends Exception {}
 }

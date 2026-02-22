@@ -6,6 +6,7 @@ import asyncio
 import logging
 from sf_printer_server.config.manager import ConfigManager
 from sf_printer_server.salesforce.pubsub import SalesforcePubSubClient
+from sf_printer_server.salesforce.context import set_sf_credentials
 from sf_printer_server.jobs.processor import process_event
 
 
@@ -42,6 +43,10 @@ async def start_server():
             client_secret=client_secret,
             login_url=instance_url,
         )
+
+        # Store credentials in shared context so the processor can
+        # auto-inject Bearer auth when downloading Salesforce content URLs.
+        set_sf_credentials(pubsub_client.access_token, pubsub_client.instance_url)
 
         event_channel = config.get('salesforce.platform_event_channel', '/event/SF_Printer_Event__e')
         logger.info(f"Subscribing to: {event_channel}")

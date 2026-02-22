@@ -14,6 +14,7 @@ from typing import Optional
 import requests
 from sf_printer_server.jobs.models import PrintJob
 from sf_printer_server.printers.drivers import get_printer_driver, get_printer_info
+from sf_printer_server.salesforce.context import is_salesforce_url, get_access_token
 
 # ---------------------------------------------------------------------------
 # TODO (next session): Salesforce response events
@@ -165,7 +166,15 @@ def _resolve_content(job: PrintJob) -> bytes:
     *_base64 — standard base64 decode
     """
     if job.content_type.endswith('_uri'):
-        auth = _build_requests_auth(job.auth_config)
+        # Auto-inject server Bearer token for Salesforce URLs unless the
+        # event explicitly provides its own Auth_Config__c.
+        if job.auth_config:
+            auth = _build_requests_auth(job.auth_config)
+        elif is_salesforce_url(job.content):
+            auth = _BearerAuth(get_access_token())
+            logger.debug('Auto-injecting server Bearer token for Salesforce URL')
+        else:
+            auth = None
         logger.info(f"Downloading content from URI: {job.content[:80]}...")
         resp = requests.get(job.content, auth=auth, timeout=60)
         resp.raise_for_status()

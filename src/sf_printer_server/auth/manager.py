@@ -57,6 +57,16 @@ class AuthManager:
             )
             
             # Authenticate based on method
+            # Auto-detect: if private_key_file is missing/blank but streaming_password exists, use password
+            private_key_file = self.config.get('auth.private_key_file', '').strip().strip(']').strip()
+            streaming_password = self.config.get('auth.streaming_password', '')
+            has_private_key = bool(private_key_file) and Path(private_key_file).exists()
+            has_password = bool(streaming_password) and bool(self.config.get('auth.username', ''))
+
+            if auth_method == 'jwt' and not has_private_key and has_password:
+                logger.info("private_key_file missing/invalid — auto-switching to password auth")
+                auth_method = 'password'
+
             if auth_method == 'jwt':
                 return self._authenticate_jwt()
             elif auth_method == 'password':
@@ -74,7 +84,7 @@ class AuthManager:
     def _authenticate_jwt(self) -> bool:
         """Authenticate using JWT Bearer flow."""
         username = self.config.get('auth.username')
-        private_key_file = self.config.get('auth.private_key_file')
+        private_key_file = (self.config.get('auth.private_key_file') or '').strip().strip(']').strip()
         
         if not username or not private_key_file:
             logger.error("JWT authentication requires 'username' and 'private_key_file' in config")

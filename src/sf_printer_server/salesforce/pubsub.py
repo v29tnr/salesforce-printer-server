@@ -36,11 +36,12 @@ except ImportError as e:
     pb2_grpc = None
 
 
-def _soap_login(instance_url: str, username: str, password: str, api_version: str = "60.0"):
+def _soap_login(login_url: str, username: str, password: str, api_version: str = "60.0"):
     """
     Authenticate via Salesforce SOAP API (username + password + security token).
     Returns (session_id, org_id, instance_url).
     This mirrors the official Salesforce Pub/Sub API Python example.
+    login_url should be https://login.salesforce.com (prod) or https://test.salesforce.com (sandbox).
     """
     url_suffix = f"/services/Soap/u/{api_version}/"
     headers = {"content-type": "text/xml", "SOAPAction": "Login"}
@@ -52,8 +53,10 @@ def _soap_login(instance_url: str, username: str, password: str, api_version: st
         f"<urn:password><![CDATA[{password}]]></urn:password>"
         "</urn:login></soapenv:Body></soapenv:Envelope>"
     )
-    resp = requests.post(instance_url + url_suffix, data=xml, headers=headers)
-    resp.raise_for_status()
+    resp = requests.post(login_url + url_suffix, data=xml, headers=headers)
+    if not resp.ok:
+        logger.error(f"SOAP login HTTP {resp.status_code}: {resp.text}")
+        resp.raise_for_status()
     res_xml = et.fromstring(resp.content.decode("utf-8"))[0][0][0]
 
     url_parts = urlparse(res_xml[3].text)
@@ -96,7 +99,7 @@ class SalesforcePubSubClient:
         self.semaphore = threading.Semaphore(1)
 
     @classmethod
-    def from_soap_auth(cls, username: str, password: str, instance_url: str, api_version: str = "60.0"):
+    def from_soap_auth(cls, username: str, password: str, login_url: str = "https://login.salesforce.com", api_version: str = "60.0"):
         """
         Create a PubSubClient authenticated via SOAP login (username + password + security token).
         This is the method used by the official Salesforce Pub/Sub API example.
@@ -104,10 +107,10 @@ class SalesforcePubSubClient:
         Args:
             username: Salesforce username
             password: Password concatenated with security token (e.g., "MyPass123TokenABC")
-            instance_url: Login URL (e.g., https://login.salesforce.com or https://test.salesforce.com)
+            login_url: Login URL - https://login.salesforce.com (prod) or https://test.salesforce.com (sandbox)
             api_version: API version string
         """
-        session_id, org_id, actual_instance_url = _soap_login(instance_url, username, password, api_version)
+        session_id, org_id, actual_instance_url = _soap_login(login_url, username, password, api_version)
         return cls(
             access_token=session_id,
             instance_url=actual_instance_url,

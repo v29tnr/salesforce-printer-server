@@ -97,7 +97,7 @@ async def start_server():
             pubsub_client = SalesforcePubSubClient.from_soap_auth(
                 username=username,
                 password=streaming_password,
-                instance_url=instance_url,
+                login_url=config.get('salesforce.login_url', 'https://login.salesforce.com'),
                 api_version=config.get('salesforce.api_version', '60.0')
             )
         else:

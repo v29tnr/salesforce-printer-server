@@ -89,20 +89,27 @@ async def start_server():
             tenant_id=org_id
         )
         
-        await pubsub_client.start()
+        pubsub_client.start()
         
         # Subscribe to platform events
         # TODO: Get event name from config or Salesforce metadata
         event_channel = "/event/Print_Job__e"
         logger.info(f"Subscribing to: {event_channel}")
         
-        async def handle_print_job(event):
+        def handle_print_job(event):
             """Handle incoming print job events."""
             logger.info(f"Received print job: {event}")
             # TODO: Process print job and send to printer
         
-        # Keep running and listening for events
-        await pubsub_client.subscribe_to_events(event_channel, handle_print_job)
+        # Run the blocking subscription in an executor
+        # This is a synchronous blocking call, so we run it in a thread
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None,
+            pubsub_client.subscribe_to_events,
+            event_channel,
+            handle_print_job
+        )
         
     except KeyboardInterrupt:
         logger.info("Shutting down...")

@@ -4,7 +4,6 @@ Salesforce Pub/Sub API client implementation.
 This module provides a client for subscribing to Salesforce platform events
 using the gRPC-based Pub/Sub API.
 """
-import asyncio
 import logging
 import json
 import io
@@ -115,13 +114,13 @@ class SalesforcePubSubClient:
             
             yield request
     
-    async def subscribe_to_events(self, channel: str, handler: Callable, num_requested: int = 1):
+    def subscribe_to_events(self, channel: str, handler: Callable, num_requested: int = 1):
         """
-        Subscribe to a platform event channel.
+        Subscribe to a platform event channel (synchronous/blocking).
         
         Args:
             channel: Event channel name (e.g., /event/Print_Job__e)
-            handler: Async callback function to handle incoming events
+            handler: Callback function to handle incoming events (can be sync or async)
             num_requested: Number of events to request at a time (default: 1)
         """
         self.event_handler = handler
@@ -152,7 +151,7 @@ class SalesforcePubSubClient:
                     metadata=auth_metadata
                 )
                 
-                # Process incoming events
+                # Process incoming events (blocking loop)
                 for fetch_response in subscription_stream:
                     if not self.running:
                         break
@@ -184,12 +183,9 @@ class SalesforcePubSubClient:
                                 
                                 logger.info(f"Decoded event: {json.dumps(decoded_event, indent=2)}")
                                 
-                                # Call the event handler
+                                # Call the event handler (blocking)
                                 if self.event_handler:
-                                    if asyncio.iscoroutinefunction(self.event_handler):
-                                        await self.event_handler(decoded_event)
-                                    else:
-                                        self.event_handler(decoded_event)
+                                    self.event_handler(decoded_event)
                                 
                             except Exception as e:
                                 logger.error(f"Error processing event: {e}", exc_info=True)
@@ -208,12 +204,12 @@ class SalesforcePubSubClient:
             if self.channel:
                 self.channel = None
     
-    async def start(self):
+    def start(self):
         """Start the Pub/Sub client."""
         self.running = True
         logger.info(f"Pub/Sub API client initialized")
     
-    async def stop(self):
+    def stop(self):
         """Stop the Pub/Sub client."""
         self.running = False
         if self.channel:

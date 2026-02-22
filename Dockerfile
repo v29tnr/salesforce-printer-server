@@ -19,22 +19,19 @@ RUN pip install --no-cache-dir \
     certifi>=2021.5.30 \
     sqlalchemy>=2.0.0
 
-# Copy proto file and scripts first (for stub generation)
+# Copy proto file and scripts  
 COPY pubsub_api.proto ./
 COPY scripts ./scripts
 
-# Create source directory structure for stub generation
-RUN mkdir -p /app/src/sf_printer_server/salesforce
-
-# Generate gRPC stub files
-RUN python scripts/generate_stubs.py && \
-    ls -la /app/src/sf_printer_server/salesforce/pubsub_api_pb2*.py || \
-    (echo "ERROR: Stub generation failed!" && exit 1)
-
-# Copy rest of source code
+# Copy source code FIRST
 COPY src/ ./src/
 COPY examples ./examples
 COPY README.md ./
+
+# Generate gRPC stub files AFTER copying source (so we don't overwrite them)
+RUN python scripts/generate_stubs.py && \
+    ls -la /app/src/sf_printer_server/salesforce/pubsub_api_pb2*.py || \
+    (echo "ERROR: Stub generation failed!" && exit 1)
 
 # Set PYTHONPATH so Python can find the modules
 ENV PYTHONPATH=/app/src

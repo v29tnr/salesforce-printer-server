@@ -156,6 +156,27 @@ class SalesforcePubSubClient:
                 auth_metadata = self._get_auth_metadata()
                 
                 logger.info("✓ Connected to Pub/Sub API")
+
+                # Call GetTopic first to verify permissions and log topic info
+                try:
+                    topic_info = self.stub.GetTopic(
+                        pb2.TopicRequest(topic_name=channel),
+                        metadata=auth_metadata
+                    )
+                    logger.info(f"GetTopic success - topic_name: {topic_info.topic_name}")
+                    logger.info(f"GetTopic success - can_subscribe: {topic_info.can_subscribe}")
+                    logger.info(f"GetTopic success - can_publish: {topic_info.can_publish}")
+                    logger.info(f"GetTopic success - tenant_guid: {topic_info.tenant_guid}")
+                    logger.info(f"GetTopic success - schema_id: {topic_info.schema_id}")
+                    if not topic_info.can_subscribe:
+                        raise RuntimeError(
+                            f"Org reports can_subscribe=False for {channel}. "
+                            "Check that the Platform Event exists and this user has subscribe permission."
+                        )
+                except grpc.RpcError as e:
+                    logger.error(f"GetTopic failed: {e.code()}: {e.details()}")
+                    raise
+
                 logger.info("Listening for events...")
                 
                 # Subscribe to the channel

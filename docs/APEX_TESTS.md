@@ -85,8 +85,10 @@ insert cv;
 
 ContentVersion saved = [SELECT Id FROM ContentVersion WHERE Id = :cv.Id];
 
+// Match this to the API_VERSION constant in PrinterService.cls
+String apiVersion  = 'v60.0';
 String downloadUrl = System.URL.getOrgDomainURL().toExternalForm()
-    + '/services/data/v60.0/sobjects/ContentVersion/'
+    + '/services/data/' + apiVersion + '/sobjects/ContentVersion/'
     + saved.Id + '/VersionData';
 
 // ── 2. Look up a ZPL printer ─────────────────────────────────────────────────

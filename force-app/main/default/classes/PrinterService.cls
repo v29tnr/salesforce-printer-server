@@ -25,6 +25,10 @@
  */
 public with sharing class PrinterService {
 
+    // Update this when you upgrade your org's API version
+    // (Setup → Apex Classes → API Version, or check your sfdx-project.json sourceApiVersion)
+    private static final String API_VERSION = 'v60.0';
+
     // -------------------------------------------------------------------------
     // Input class — each property is a Flow input variable
     // -------------------------------------------------------------------------
@@ -146,7 +150,7 @@ public with sharing class PrinterService {
                         'No ContentVersion found for ContentDocument: ' + req.contentDocumentId
                     );
                 }
-                resolvedContent     = orgUrl + '/services/data/v60.0/sobjects/ContentVersion/' + cv.Id + '/VersionData';
+                resolvedContent     = orgUrl + '/services/data/' + API_VERSION + '/sobjects/ContentVersion/' + cv.Id + '/VersionData';
                 resolvedContentType = 'pdf_uri';
                 if (String.isBlank(req.jobTitle)) {
                     req.jobTitle = cv.Title + (String.isNotBlank(cv.FileExtension) ? '.' + cv.FileExtension : '');

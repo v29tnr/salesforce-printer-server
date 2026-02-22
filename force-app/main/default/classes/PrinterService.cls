@@ -4,75 +4,115 @@
  * Reusable service for firing SF_Printer_Event__e platform events.
  * Looks up the Printer__c record to build connection details and ZPL config.
  *
- * Usage — from Apex:
+ * ── SIMPLE USAGE (PDF from Salesforce File) ──────────────────────────────────────
+ * Just provide Printer ID and Content Document ID — the service does the rest:
+ *
  *   PrinterService.PrintRequest req = new PrinterService.PrintRequest();
- *   req.printerId    = '001xx...';
- *   req.contentType  = 'raw_base64';
- *   req.content      = EncodingUtil.base64Encode(Blob.valueOf(zplString));
- *   req.correlationId = 'order-' + recordId;
+ *   req.printerId         = myRecord.Printer__c;
+ *   req.contentDocumentId = cvId;   // ContentDocument Id
+ *   req.jobTitle          = 'Invoice ' + myRecord.Name;
  *   PrinterService.send(new List<PrinterService.PrintRequest>{ req });
  *
- * Usage — from Flow:
- *   Action type: Apex  →  PrinterService
- *   Required inputs: Printer_Id, Content_Type, Content
- *   Optional inputs: Correlation_Id, Job_Title, Source, Qty, Options_JSON
+ * ── ZPL / RAW USAGE ───────────────────────────────────────────────────────
+ *   req.printerId   = myRecord.Printer__c;
+ *   req.contentType = 'raw_base64';
+ *   req.content     = EncodingUtil.base64Encode(Blob.valueOf(zplString));
+ *
+ * ── FLOW USAGE ─────────────────────────────────────────────────────────────
+ *   Action type: Apex → PrinterService → Send Print Job
+ *   Required:  Printer ID + (Content Document ID  OR  Content Type + Content)
+ *   Optional:  Job Title, Source, Qty, Options JSON
  */
 public with sharing class PrinterService {
 
     // -------------------------------------------------------------------------
-    // Invocable input class — each property maps to a Flow input variable
+    // Input class — each property is a Flow input variable
     // -------------------------------------------------------------------------
 
     public class PrintRequest {
+
+        // ── Required: identify the printer ──────────────────────────────────────
         @InvocableVariable(label='Printer ID' description='Id of the Printer__c record' required=true)
         public Id printerId;
 
-        @InvocableVariable(label='Content Type' description='pdf_uri | pdf_base64 | raw_uri | raw_base64' required=true)
+        // ── Option A: Salesforce File (easiest for admins) ──────────────────────
+        @InvocableVariable(
+            label='Content Document ID'
+            description='Id of a ContentDocument (Salesforce File). The service automatically fetches the latest version and sends it to the printer. Use this OR Content Type + Content — not both.'
+        )
+        public Id contentDocumentId;
+
+        // ── Option B: Manual content (ZPL, external PDF, etc.) ───────────────
+        @InvocableVariable(
+            label='Content Type'
+            description='pdf_uri | pdf_base64 | raw_uri | raw_base64. Not needed when using Content Document ID.'
+        )
         public String contentType;
 
-        @InvocableVariable(label='Content' description='Base64 payload or URL depending on Content Type' required=true)
+        @InvocableVariable(
+            label='Content'
+            description='Base64 payload or URL. Not needed when using Content Document ID.'
+        )
         public String content;
 
-        @InvocableVariable(label='Correlation ID' description='Unique ID for idempotency. Use a UUID or record Id + timestamp.')
-        public String correlationId;
-
+        // ── Optional metadata ───────────────────────────────────────────────
         @InvocableVariable(label='Job Title' description='Label shown in the print queue')
         public String jobTitle;
 
-        @InvocableVariable(label='Source' description='Free text — identifies the originating process or record type')
+        @InvocableVariable(label='Source' description='Free text — identifies the originating process, flow or object')
         public String source;
 
-        @InvocableVariable(label='Qty' description='Number of copies. RAW/ZPL only — PDF uses Options JSON.')
+        @InvocableVariable(label='Qty' description='Number of copies. ZPL/RAW only — PDF uses Options JSON.')
         public Integer qty;
 
-        @InvocableVariable(label='Options JSON' description='PDF options JSON blob. e.g. {"copies":2,"duplex":"long-edge"}')
+        @InvocableVariable(label='Options JSON' description='PDF print options. e.g. {"copies":2,"duplex":"long-edge","paper":"A4"}')
         public String optionsJson;
 
-        @InvocableVariable(label='Expire After (seconds)' description='Discard job if not delivered within this many seconds')
+        @InvocableVariable(label='Correlation ID' description='Unique job ID for idempotency. Leave blank to auto-generate.')
+        public String correlationId;
+
+        @InvocableVariable(label='Expire After (seconds)' description='Discard job if not delivered within this many seconds.')
         public Integer expireAfter;
 
-        @InvocableVariable(label='Auth Config JSON' description='HTTP auth for downloading *_uri content. e.g. {"type":"BearerToken","token":"<session>"} or {"type":"BasicAuth","user":"u","pass":"p"}')
+        @InvocableVariable(label='Auth Config JSON' description='Only needed for external *_uri URLs requiring auth. Leave blank for Salesforce files — the server handles auth automatically.')
         public String authConfig;
     }
 
     // -------------------------------------------------------------------------
     // Invocable entry point — called by Flow
     // -------------------------------------------------------------------------
+    // Invocable entry point — called by Flow or Apex
+    // -------------------------------------------------------------------------
 
     @InvocableMethod(
         label='Send Print Job'
-        description='Fires SF_Printer_Event__e to the printer server. Looks up Printer__c for connection details and ZPL config.'
+        description='Send a print job to a printer. Provide a Printer ID and either a Content Document ID (Salesforce File) or Content Type + Content (ZPL/raw/external PDF).'
         category='Printing'
     )
     public static void send(List<PrintRequest> requests) {
         if (requests == null || requests.isEmpty()) return;
 
-        // Collect all Printer IDs for a single query
+        // ── Resolve Content Document IDs in one SOQL query ─────────────────────
+        Set<Id> docIds = new Set<Id>();
+        for (PrintRequest r : requests) {
+            if (r.contentDocumentId != null) docIds.add(r.contentDocumentId);
+        }
+        Map<Id, ContentVersion> latestVersionByDocId = new Map<Id, ContentVersion>();
+        if (!docIds.isEmpty()) {
+            for (ContentVersion cv : [
+                SELECT Id, ContentDocumentId, Title, FileExtension
+                FROM ContentVersion
+                WHERE ContentDocumentId IN :docIds AND IsLatest = true
+            ]) {
+                latestVersionByDocId.put(cv.ContentDocumentId, cv);
+            }
+        }
+
+        // ── Resolve Printer records in one SOQL query ──────────────────────────
         Set<Id> printerIds = new Set<Id>();
         for (PrintRequest r : requests) {
             if (r.printerId != null) printerIds.add(r.printerId);
         }
-
         Map<Id, Printer__c> printers = new Map<Id, Printer__c>([
             SELECT Id, Name, Host__c, Port__c, Type__c, Enabled__c,
                    DPI__c, Label_Width_mm__c, Label_Height_mm__c,
@@ -81,6 +121,7 @@ public with sharing class PrinterService {
             WHERE Id IN :printerIds
         ]);
 
+        String orgUrl = System.URL.getOrgDomainURL().toExternalForm();
         List<SF_Printer_Event__e> events = new List<SF_Printer_Event__e>();
 
         for (PrintRequest req : requests) {
@@ -90,26 +131,54 @@ public with sharing class PrinterService {
                 throw new PrinterServiceException('Printer not found: ' + req.printerId);
             }
             if (printer.Enabled__c == false) {
-                throw new PrinterServiceException('Printer \'' + printer.Name + '\' is disabled. Enable it on the Printer record before sending jobs.');
+                throw new PrinterServiceException(
+                    'Printer \'' + printer.Name + '\' is disabled. '
+                    + 'Enable it on the Printer record before sending jobs.'
+                );
+            }
+
+            // ── Resolve content from ContentDocument if provided ────────────────
+            String resolvedContentType = req.contentType;
+            String resolvedContent     = req.content;
+
+            if (req.contentDocumentId != null) {
+                ContentVersion cv = latestVersionByDocId.get(req.contentDocumentId);
+                if (cv == null) {
+                    throw new PrinterServiceException(
+                        'No ContentVersion found for ContentDocument: ' + req.contentDocumentId
+                    );
+                }
+                resolvedContent     = orgUrl + '/services/data/v60.0/sobjects/ContentVersion/' + cv.Id + '/VersionData';
+                resolvedContentType = 'pdf_uri';
+                if (String.isBlank(req.jobTitle)) {
+                    req.jobTitle = cv.Title + (String.isNotBlank(cv.FileExtension) ? '.' + cv.FileExtension : '');
+                }
+            }
+
+            if (String.isBlank(resolvedContent)) {
+                throw new PrinterServiceException(
+                    'No content provided. Supply Content Document ID or Content Type + Content.'
+                );
+            }
+            if (String.isBlank(resolvedContentType)) {
+                throw new PrinterServiceException('Content Type is required when not using Content Document ID.');
             }
 
             SF_Printer_Event__e evt = new SF_Printer_Event__e();
-            evt.Type__c         = 'print_job';
-            evt.Printer_Host__c = printer.Host__c;
-            evt.Printer_Port__c = printer.Port__c != null ? printer.Port__c : 9100;
-            evt.Printer_Type__c = printer.Type__c;
-            evt.Content_Type__c = req.contentType;
-            evt.Content__c      = req.content;
-            evt.Correlation_Id__c = String.isNotBlank(req.correlationId)
-                ? req.correlationId
-                : generateUUID();
-            evt.Job_Title__c    = req.jobTitle;
-            evt.Source__c       = req.source;
-            evt.Qty__c          = req.qty != null ? req.qty : 1;
-            evt.Options__c      = req.optionsJson;
-            evt.Expire_After__c = req.expireAfter;
-            evt.Auth_Config__c  = req.authConfig;
-            evt.ZPL_Config__c   = buildZplConfig(printer);
+            evt.Type__c           = 'print_job';
+            evt.Printer_Host__c   = printer.Host__c;
+            evt.Printer_Port__c   = printer.Port__c != null ? printer.Port__c : 9100;
+            evt.Printer_Type__c   = printer.Type__c;
+            evt.Content_Type__c   = resolvedContentType;
+            evt.Content__c        = resolvedContent;
+            evt.Correlation_Id__c = String.isNotBlank(req.correlationId) ? req.correlationId : generateUUID();
+            evt.Job_Title__c      = req.jobTitle;
+            evt.Source__c         = req.source;
+            evt.Qty__c            = req.qty != null ? req.qty : 1;
+            evt.Options__c        = req.optionsJson;
+            evt.Expire_After__c   = req.expireAfter;
+            evt.Auth_Config__c    = req.authConfig;
+            evt.ZPL_Config__c     = buildZplConfig(printer);
 
             events.add(evt);
         }
@@ -118,10 +187,8 @@ public with sharing class PrinterService {
             List<Database.SaveResult> results = EventBus.publish(events);
             for (Integer i = 0; i < results.size(); i++) {
                 if (!results[i].isSuccess()) {
-                    for (Database.Error err : results[i].getErrors()) {
-                        System.debug(LoggingLevel.ERROR,
-                            'PrinterService: Failed to publish event for printer '
-                            + requests[i].printerId + ': ' + err.getMessage());
+                    for (Database.Error e : results[i].getErrors()) {
+                        System.debug(LoggingLevel.ERROR, 'PrinterService: ' + e.getMessage());
                     }
                 }
             }

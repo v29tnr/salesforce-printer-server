@@ -148,6 +148,18 @@ class SalesforcePubSubClient:
             logger.info(f"Auth metadata - tenantid: {self.tenant_id}")
             logger.info(f"Auth metadata - accesstoken (first 20 chars): {self.access_token[:20]}...")
             logger.info(f"Auth metadata - accesstoken length: {len(self.access_token)}")
+            # Decode JWT payload to inspect granted scopes (no verification, read-only)
+            try:
+                import base64
+                parts = self.access_token.split('.')
+                if len(parts) == 3:
+                    payload_b64 = parts[1] + '=='  # pad
+                    payload_json = base64.urlsafe_b64decode(payload_b64).decode('utf-8', errors='replace')
+                    logger.info(f"JWT token payload: {payload_json}")
+                else:
+                    logger.info("Access token is not a JWT (no dot-separated parts)")
+            except Exception as jwt_err:
+                logger.info(f"Could not decode token: {jwt_err}")
             
             # Create secure channel
             with grpc.secure_channel(self.PUBSUB_ENDPOINT, creds) as channel_conn:

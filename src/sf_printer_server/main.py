@@ -36,93 +36,76 @@ async def start_server():
             logger.error("Server not configured. Please run the installer first.")
             logger.error("Run: python -m sf_printer_server.installer")
             sys.exit(1)
-        
-        # Initialize authentication
-        logger.info("Initializing authentication...")
-        auth_manager = AuthManager(config)
-        if not auth_manager.initialize():
-            logger.error("Authentication failed. Please check your configuration.")
-            sys.exit(1)
-        
-        access_token = auth_manager.get_access_token()
-        logger.info("✓ Authentication successful")
-        
-        # Get org information
-        instance_url = config.get('salesforce.instance_url')
-        actual_instance_url = auth_manager.oauth_client.instance_url_from_token or instance_url
-        
-        logger.info(f"Config instance_url: {instance_url}")
-        logger.info(f"Token instance_url_from_token: {auth_manager.oauth_client.instance_url_from_token}")
-        logger.info(f"Using actual_instance_url: {actual_instance_url}")
-        
-        # Get org ID (tenant ID) for Pub/Sub API
-        logger.info("Retrieving org ID...")
-        import aiohttp
-        import json
-        
-        org_id = None
-        try:
-            async with aiohttp.ClientSession() as session:
-                headers = {"Authorization": f"Bearer {access_token}"}
-                
-                # Get org info from REST API
-                identity_url = f"{actual_instance_url}/services/oauth2/userinfo"
-                async with session.get(identity_url, headers=headers) as resp:
-                    if resp.status == 200:
-                        user_info = await resp.json()
-                        org_id = user_info.get('organization_id')
-                        logger.info(f"✓ Org ID: {org_id}")
-                    else:
-                        logger.error(f"Failed to get org ID: {resp.status}")
-                        
-        except Exception as e:
-            logger.error(f"Error retrieving org ID: {e}")
-            sys.exit(1)
-        
-        if not org_id:
-            logger.error("Could not retrieve org ID. Please check authentication.")
-            sys.exit(1)
-        
-        # Initialize Pub/Sub API client.
-        # Auth priority:
-        #   1. Client Credentials flow (client_id + client_secret only, no user password) — best for integration users
-        #   2. OAuth Username-Password flow (client_id + client_secret + username + password)
-        #   3. JWT token fallback (may not work with Pub/Sub API on some orgs)
-        logger.info("Initializing Pub/Sub API client...")
 
-        streaming_password = config.get('auth.streaming_password', '')
-        username = config.get('auth.username', '')
         client_id = config.get('auth.client_id', '')
         client_secret = config.get('auth.client_secret', '')
-        login_url = config.get('salesforce.instance_url', 'https://login.salesforce.com')
-        # Normalize to standard login URL
-        if 'my.salesforce.com' in login_url:
-            login_url = 'https://login.salesforce.com'
+        streaming_password = config.get('auth.streaming_password', '')
+        username = config.get('auth.username', '')
+        instance_url = config.get('salesforce.instance_url', 'https://login.salesforce.com')
+        login_url = 'https://login.salesforce.com' if 'my.salesforce.com' in instance_url else instance_url
 
+        # --- Client Credentials path: no user auth needed, instance_url/org_id come from token ---
         if client_id and client_secret and not streaming_password:
-            logger.info("Using OAuth Client Credentials flow for Pub/Sub API (no user credentials needed)")
+            logger.info("Using OAuth Client Credentials flow (instance_url and org_id derived from token)")
             pubsub_client = SalesforcePubSubClient.from_client_credentials(
                 client_id=client_id,
                 client_secret=client_secret,
                 login_url=login_url,
             )
-        elif streaming_password and username and client_id and client_secret:
-            logger.info(f"Using OAuth Username-Password flow for Pub/Sub API (username: {username})")
-            pubsub_client = SalesforcePubSubClient.from_oauth_password(
-                client_id=client_id,
-                client_secret=client_secret,
-                username=username,
-                password=streaming_password,
-                login_url=login_url,
-            )
+
         else:
-            logger.warning("No client_secret configured — falling back to JWT token (may fail on some orgs)")
-            pubsub_client = SalesforcePubSubClient(
-                access_token=access_token,
-                instance_url=actual_instance_url,
-                tenant_id=org_id
-            )
-        
+            # --- JWT / Password path: authenticate first, then get org ID via REST ---
+            logger.info("Initializing authentication...")
+            auth_manager = AuthManager(config)
+            if not auth_manager.initialize():
+                logger.error("Authentication failed. Please check your configuration.")
+                sys.exit(1)
+
+            access_token = auth_manager.get_access_token()
+            logger.info("✓ Authentication successful")
+
+            actual_instance_url = auth_manager.oauth_client.instance_url_from_token or instance_url
+
+            logger.info("Retrieving org ID...")
+            import aiohttp
+
+            org_id = None
+            try:
+                async with aiohttp.ClientSession() as session:
+                    headers = {"Authorization": f"Bearer {access_token}"}
+                    identity_url = f"{actual_instance_url}/services/oauth2/userinfo"
+                    async with session.get(identity_url, headers=headers) as resp:
+                        if resp.status == 200:
+                            user_info = await resp.json()
+                            org_id = user_info.get('organization_id')
+                            logger.info(f"✓ Org ID: {org_id}")
+                        else:
+                            logger.error(f"Failed to get org ID: {resp.status}")
+            except Exception as e:
+                logger.error(f"Error retrieving org ID: {e}")
+                sys.exit(1)
+
+            if not org_id:
+                logger.error("Could not retrieve org ID. Please check authentication.")
+                sys.exit(1)
+
+            if streaming_password and username and client_id and client_secret:
+                logger.info(f"Using OAuth Username-Password flow for Pub/Sub API (username: {username})")
+                pubsub_client = SalesforcePubSubClient.from_oauth_password(
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    username=username,
+                    password=streaming_password,
+                    login_url=login_url,
+                )
+            else:
+                logger.warning("No client_secret configured — using JWT token for Pub/Sub (may fail on some orgs)")
+                pubsub_client = SalesforcePubSubClient(
+                    access_token=access_token,
+                    instance_url=actual_instance_url,
+                    tenant_id=org_id
+                )
+
         pubsub_client.start()
         
         # Subscribe to platform events

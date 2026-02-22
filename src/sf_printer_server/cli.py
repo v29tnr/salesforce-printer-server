@@ -86,7 +86,16 @@ def run_setup(interactive: bool = True):
 
     private_key_file = _prompt("Path to JWT private key file (leave blank if using password auth)",
                                get('auth', 'private_key_file'))
-    set_val('auth', 'private_key_file', private_key_file)
+    if private_key_file:
+        set_val('auth', 'private_key_file', private_key_file)
+        set_val('auth', 'method', 'jwt')
+    else:
+        set_val('auth', 'private_key_file', '')
+        # Use password method if we have the credentials, otherwise jwt
+        if streaming_password and client_secret:
+            set_val('auth', 'method', 'password')
+        else:
+            set_val('auth', 'method', 'jwt')
 
     print()
     config.save_config()

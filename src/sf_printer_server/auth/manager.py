@@ -90,10 +90,11 @@ class AuthManager:
     def _authenticate_password(self) -> bool:
         """Authenticate using username-password flow."""
         username = self.config.get('auth.username')
-        password = self.config.get('auth.password')
+        # Support both 'password' and 'streaming_password' config keys
+        password = self.config.get('auth.password') or self.config.get('auth.streaming_password')
         
         if not username or not password:
-            logger.error("Password authentication requires 'username' and 'password' in config")
+            logger.error("Password authentication requires 'username' and 'password' (or 'streaming_password') in config")
             return False
         
         logger.info(f"Authenticating via password flow as {username}")

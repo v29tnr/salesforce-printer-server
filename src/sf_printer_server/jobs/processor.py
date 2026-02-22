@@ -118,6 +118,8 @@ def _resolve_content(job: PrintJob) -> bytes:
         raw = job.content.strip()
         if ',' in raw and raw.startswith('data:'):
             raw = raw.split(',', 1)[1]
+        # Re-pad in case Apex/Salesforce stripped trailing '=' characters
+        raw += '=' * (-len(raw) % 4)
         return base64.b64decode(raw)
 
     else:

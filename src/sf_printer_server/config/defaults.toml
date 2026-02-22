@@ -1,44 +1,19 @@
 [salesforce]
-# Salesforce instance URL
-# Use https://login.salesforce.com for production
-# Use https://test.salesforce.com for sandboxes
-instance_url = "https://login.salesforce.com"
-# Salesforce API version (e.g., "59.0", "60.0")
+# Your Salesforce My Domain URL (required)
+# e.g. https://mycompany.my.salesforce.com
+instance_url = ""
+# Salesforce API version
 api_version = "60.0"
-# Platform Event API name (without __e suffix)
-platform_event_name = "Print_Job__e"
+# Platform Event channel to subscribe to
+platform_event_channel = "/event/Print_Job__e"
 
 [auth]
-# Authentication method: jwt, password, or web
-# RECOMMENDED: Use 'jwt' for production (most secure, no user interaction)
-method = "jwt"
-
-# Connected App Consumer Key (required for all methods)
+# OAuth Client Credentials flow — no user password required.
+# Connected App must have "Enable Client Credentials Flow" enabled
+# and a "Run As" user configured.
+method = "client_credentials"
 client_id = ""
-
-# Connected App Consumer Secret (required for OAuth Username-Password flow)
-# Find it in: App Manager → Your Connected App → View → Consumer Key and Secret
 client_secret = ""
-
-# For JWT method (RECOMMENDED for production):
-# Username of the integration user
-username = ""
-# Path to private key file for JWT authentication
-private_key_file = ""
-
-# For Streaming API (REQUIRED - JWT tokens don't work with Streaming/CometD):
-# Password + Security Token concatenated (e.g., "MyPass123MySecurityToken456")
-# Get security token from: Setup → My Personal Information → Reset Security Token
-streaming_password = ""
-
-# For password method (testing only):
-# client_secret = ""
-# username = ""
-# password = "" # Password + Security Token concatenated
-
-# For web method (interactive, one-time setup):
-# client_secret = ""
-# redirect_uri = "http://localhost:8888/oauth/callback"
 
 [server]
 # Enable ZPL support

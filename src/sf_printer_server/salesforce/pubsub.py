@@ -1,15 +1,11 @@
 """
-Salesforce Pub/Sub API client implementation.
-
-This module provides a client for subscribing to Salesforce platform events
-using the gRPC-based Pub/Sub API.
+Salesforce Pub/Sub API client using OAuth Client Credentials flow.
 """
 import logging
 import json
 import io
 import threading
 from typing import Optional, Callable
-from urllib.parse import urlparse
 import requests
 import grpc
 import certifi
@@ -35,12 +31,11 @@ except ImportError as e:
     pb2_grpc = None
 
 
-def _oauth_client_credentials_login(login_url: str, client_id: str, client_secret: str):
+def _client_credentials_login(login_url: str, client_id: str, client_secret: str):
     """
-    Authenticate via Salesforce OAuth Client Credentials flow.
-    No user credentials needed — uses only client_id + client_secret.
+    Authenticate using OAuth Client Credentials flow.
+    Returns (access_token, org_id, instance_url).
     Requires 'Enable Client Credentials Flow' on the Connected App with a Run As user set.
-    Returns an opaque access token compatible with Pub/Sub API.
     """
     resp = requests.post(
         f"{login_url}/services/oauth2/token",
@@ -51,53 +46,16 @@ def _oauth_client_credentials_login(login_url: str, client_id: str, client_secre
         }
     )
     if not resp.ok:
-        logger.error(f"OAuth client credentials HTTP {resp.status_code}: {resp.text}")
+        logger.error(f"OAuth client credentials failed ({resp.status_code}): {resp.text}")
         resp.raise_for_status()
 
-    token_data = resp.json()
-    access_token = token_data["access_token"]
-    instance_url = token_data["instance_url"]
-
-    # Extract org ID from the id URL
-    id_url = token_data.get("id", "")
+    data = resp.json()
+    access_token = data["access_token"]
+    instance_url = data["instance_url"]
+    id_url = data.get("id", "")
     org_id = id_url.rstrip("/").split("/")[-2] if id_url else None
 
-    logger.info(f"OAuth client credentials login successful - org_id: {org_id}, instance_url: {instance_url}")
-    logger.info(f"Token starts with: {access_token[:10]}...")
-    return access_token, org_id, instance_url
-
-
-def _oauth_password_login(login_url: str, client_id: str, client_secret: str, username: str, password: str):
-    """
-    Authenticate via Salesforce OAuth Username-Password flow.
-    Returns (access_token, org_id, instance_url).
-    Requires 'Allow OAuth Username-Password Flows' enabled in Setup.
-    password should be password+security_token concatenated.
-    """
-    resp = requests.post(
-        f"{login_url}/services/oauth2/token",
-        data={
-            "grant_type": "password",
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "username": username,
-            "password": password,
-        }
-    )
-    if not resp.ok:
-        logger.error(f"OAuth password login HTTP {resp.status_code}: {resp.text}")
-        resp.raise_for_status()
-
-    token_data = resp.json()
-    access_token = token_data["access_token"]
-    instance_url = token_data["instance_url"]
-
-    # Extract org ID from the id URL: https://login.salesforce.com/id/{orgId}/{userId}
-    id_url = token_data.get("id", "")
-    org_id = id_url.rstrip("/").split("/")[-2] if id_url else None
-
-    logger.info(f"OAuth password login successful - org_id: {org_id}, instance_url: {instance_url}")
-    logger.info(f"Token type: {token_data.get('token_type')}, token starts with: {access_token[:10]}...")
+    logger.info(f"Login successful — org: {org_id}, instance: {instance_url}")
     return access_token, org_id, instance_url
 
 
@@ -131,47 +89,17 @@ class SalesforcePubSubClient:
         self.semaphore = threading.Semaphore(1)
 
     @classmethod
-    def from_client_credentials(cls, client_id: str, client_secret: str, login_url: str = "https://login.salesforce.com"):
+    def from_client_credentials(cls, client_id: str, client_secret: str, login_url: str):
         """
-        Create a PubSubClient using OAuth Client Credentials flow (no user password needed).
-        Requires 'Enable Client Credentials Flow' on the Connected App with a Run As user configured.
+        Create a client using OAuth Client Credentials flow.
 
         Args:
             client_id: Connected App Consumer Key
             client_secret: Connected App Consumer Secret
-            login_url: https://login.salesforce.com (prod) or https://test.salesforce.com (sandbox)
+            login_url: My Domain URL (e.g. https://myorg.my.salesforce.com)
         """
-        access_token, org_id, instance_url = _oauth_client_credentials_login(
-            login_url, client_id, client_secret
-        )
-        return cls(
-            access_token=access_token,
-            instance_url=instance_url,
-            tenant_id=org_id
-        )
-
-    @classmethod
-    def from_oauth_password(cls, client_id: str, client_secret: str, username: str, password: str, login_url: str = "https://login.salesforce.com"):
-        """
-        Create a PubSubClient using OAuth Username-Password flow.
-        Returns an opaque access token compatible with Pub/Sub API.
-        Requires 'Allow OAuth Username-Password Flows' enabled in Salesforce Setup.
-
-        Args:
-            client_id: Connected App Consumer Key
-            client_secret: Connected App Consumer Secret
-            username: Salesforce username
-            password: Password concatenated with security token
-            login_url: https://login.salesforce.com (prod) or https://test.salesforce.com (sandbox)
-        """
-        access_token, org_id, instance_url = _oauth_password_login(
-            login_url, client_id, client_secret, username, password
-        )
-        return cls(
-            access_token=access_token,
-            instance_url=instance_url,
-            tenant_id=org_id
-        )
+        access_token, org_id, instance_url = _client_credentials_login(login_url, client_id, client_secret)
+        return cls(access_token=access_token, instance_url=instance_url, tenant_id=org_id)
 
     def _get_auth_metadata(self):
         """Get authentication metadata for gRPC calls."""
@@ -198,39 +126,20 @@ class SalesforcePubSubClient:
         reader = avro.io.DatumReader(schema)
         return reader.read(decoder)
     
-    def _fetch_request_stream(self, topic: str, replay_preset=None, replay_id=None, num_requested: int = 1):
-        """
-        Generate FetchRequest stream for subscription.
-        
-        Args:
-            topic: Topic name to subscribe to
-            replay_preset: Replay preset (LATEST, EARLIEST, or CUSTOM)
-            replay_id: Replay ID for CUSTOM preset
-            num_requested: Number of events to request
-            
-        Yields:
-            FetchRequest messages
-        """
-        # First request includes topic and replay settings
-        first_request = True
-        
+    def _fetch_request_stream(self, topic: str, num_requested: int = 1):
+        """Yield FetchRequests to drive the Subscribe streaming RPC."""
+        first = True
         while self.running:
             self.semaphore.acquire()
-            
-            if first_request:
-                request = pb2.FetchRequest(
+            if first:
+                yield pb2.FetchRequest(
                     topic_name=topic,
-                    replay_preset=replay_preset or pb2.ReplayPreset.LATEST,
-                    num_requested=num_requested
+                    replay_preset=pb2.ReplayPreset.LATEST,
+                    num_requested=num_requested,
                 )
-                if replay_id:
-                    request.replay_id = replay_id
-                first_request = False
+                first = False
             else:
-                # Subsequent requests don't need topic or replay settings
-                request = pb2.FetchRequest(num_requested=num_requested)
-            
-            yield request
+                yield pb2.FetchRequest(num_requested=num_requested)
     
     def subscribe_to_events(self, channel: str, handler: Callable, num_requested: int = 1):
         """
@@ -244,22 +153,13 @@ class SalesforcePubSubClient:
         self.event_handler = handler
         self.running = True
         
-        logger.info(f"Subscribing to channel: {channel}")
-        logger.info(f"Using Pub/Sub API endpoint: {self.PUBSUB_ENDPOINT}")
-        logger.info(f"Using instance URL: {self.instance_url}")
-        logger.info(f"Tenant ID: {self.tenant_id}")
+        logger.info(f"Connecting to Pub/Sub API: {self.PUBSUB_ENDPOINT}")
         
         try:
             # Set up SSL credentials
             with open(certifi.where(), 'rb') as f:
                 creds = grpc.ssl_channel_credentials(f.read())
             
-            auth_metadata = self._get_auth_metadata()
-            logger.info(f"Auth metadata - instanceurl: {self.instance_url}")
-            logger.info(f"Auth metadata - tenantid: {self.tenant_id}")
-            logger.info(f"Auth metadata - accesstoken (first 20 chars): {self.access_token[:20]}...")
-            
-            # Create secure channel
             with grpc.secure_channel(self.PUBSUB_ENDPOINT, creds) as channel_conn:
                 self.channel = channel_conn
                 self.stub = pb2_grpc.PubSubStub(channel_conn)
@@ -273,11 +173,11 @@ class SalesforcePubSubClient:
                         pb2.TopicRequest(topic_name=channel),
                         metadata=auth_metadata
                     )
-                    logger.info(f"GetTopic success - topic_name: {topic_info.topic_name}")
-                    logger.info(f"GetTopic success - can_subscribe: {topic_info.can_subscribe}")
-                    logger.info(f"GetTopic success - can_publish: {topic_info.can_publish}")
-                    logger.info(f"GetTopic success - tenant_guid: {topic_info.tenant_guid}")
-                    logger.info(f"GetTopic success - schema_id: {topic_info.schema_id}")
+                    logger.info(
+                        f"Topic: {topic_info.topic_name} — "
+                        f"can_subscribe={topic_info.can_subscribe}, "
+                        f"can_publish={topic_info.can_publish}"
+                    )
                     if not topic_info.can_subscribe:
                         raise RuntimeError(
                             f"Org reports can_subscribe=False for {channel}. "
@@ -347,11 +247,6 @@ class SalesforcePubSubClient:
             self.running = False
             if self.channel:
                 self.channel = None
-    
-    def start(self):
-        """Start the Pub/Sub client."""
-        self.running = True
-        logger.info(f"Pub/Sub API client initialized")
     
     def stop(self):
         """Stop the Pub/Sub client."""

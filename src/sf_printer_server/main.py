@@ -51,6 +51,10 @@ async def start_server():
         instance_url = config.get('salesforce.instance_url')
         actual_instance_url = auth_manager.oauth_client.instance_url_from_token or instance_url
         
+        logger.info(f"Config instance_url: {instance_url}")
+        logger.info(f"Token instance_url_from_token: {auth_manager.oauth_client.instance_url_from_token}")
+        logger.info(f"Using actual_instance_url: {actual_instance_url}")
+        
         # Get org ID (tenant ID) for Pub/Sub API
         logger.info("Retrieving org ID...")
         import aiohttp

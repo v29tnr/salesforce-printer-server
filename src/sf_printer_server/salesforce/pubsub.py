@@ -143,6 +143,12 @@ class SalesforcePubSubClient:
             with open(certifi.where(), 'rb') as f:
                 creds = grpc.ssl_channel_credentials(f.read())
             
+            auth_metadata = self._get_auth_metadata()
+            logger.info(f"Auth metadata - instanceurl: {self.instance_url}")
+            logger.info(f"Auth metadata - tenantid: {self.tenant_id}")
+            logger.info(f"Auth metadata - accesstoken (first 20 chars): {self.access_token[:20]}...")
+            logger.info(f"Auth metadata - accesstoken length: {len(self.access_token)}")
+            
             # Create secure channel
             with grpc.secure_channel(self.PUBSUB_ENDPOINT, creds) as channel_conn:
                 self.channel = channel_conn

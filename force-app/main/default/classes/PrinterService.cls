@@ -27,7 +27,7 @@ public with sharing class PrinterService {
 
     // Update this when you upgrade your org's API version
     // (Setup → Apex Classes → API Version, or check your sfdx-project.json sourceApiVersion)
-    private static final String API_VERSION = 'v60.0';
+    private static final String API_VERSION = 'v65.0';
 
     // -------------------------------------------------------------------------
     // Input class — each property is a Flow input variable

@@ -16,8 +16,15 @@ logger = logging.getLogger(__name__)
 
 # These will be imported after stub generation
 try:
-    from . import pubsub_api_pb2 as pb2
-    from . import pubsub_api_pb2_grpc as pb2_grpc
+    # Add the salesforce package to path so we can import the generated stubs
+    import sys
+    import os
+    salesforce_dir = os.path.dirname(os.path.abspath(__file__))
+    if salesforce_dir not in sys.path:
+        sys.path.insert(0, salesforce_dir)
+    
+    import pubsub_api_pb2 as pb2
+    import pubsub_api_pb2_grpc as pb2_grpc
     import avro.schema
     import avro.io
 except ImportError as e:

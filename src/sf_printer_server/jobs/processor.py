@@ -14,7 +14,7 @@ from typing import Optional
 import requests
 from sf_printer_server.jobs.models import PrintJob
 from sf_printer_server.printers.drivers import get_printer_driver, get_printer_info
-from sf_printer_server.salesforce.context import is_salesforce_url, get_access_token
+from sf_printer_server.salesforce.context import is_salesforce_url, get_access_token, refresh_token
 
 # ---------------------------------------------------------------------------
 # TODO (next session): Salesforce response events
@@ -177,6 +177,12 @@ def _resolve_content(job: PrintJob) -> bytes:
             auth = None
         logger.info(f"Downloading content from URI: {job.content[:80]}...")
         resp = requests.get(job.content, auth=auth, timeout=60)
+        # On 401, try refreshing the token once and retry
+        if resp.status_code == 401 and is_salesforce_url(job.content) and not job.auth_config:
+            logger.warning('Got 401 on Salesforce URL — refreshing token and retrying')
+            if refresh_token():
+                auth = _BearerAuth(get_access_token())
+                resp = requests.get(job.content, auth=auth, timeout=60)
         resp.raise_for_status()
         return resp.content
 

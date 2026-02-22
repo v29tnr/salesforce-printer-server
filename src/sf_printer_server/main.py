@@ -46,7 +46,12 @@ async def start_server():
 
         # Store credentials in shared context so the processor can
         # auto-inject Bearer auth when downloading Salesforce content URLs.
-        set_sf_credentials(pubsub_client.access_token, pubsub_client.instance_url)
+        set_sf_credentials(
+            pubsub_client.access_token,
+            pubsub_client.instance_url,
+            client_id=client_id,
+            client_secret=client_secret,
+        )
 
         event_channel = config.get('salesforce.platform_event_channel', '/event/SF_Printer_Event__e')
         logger.info(f"Subscribing to: {event_channel}")

@@ -185,17 +185,44 @@ def _resolve_content(job: PrintJob) -> bytes:
 
 
 def _build_requests_auth(auth_config: dict):
-    """Convert Auth_Config__c JSON to a requests auth tuple / object."""
+    """
+    Convert Auth_Config__c JSON to a requests auth object or header dict.
+
+    Supported types:
+      BasicAuth   — {"type":"BasicAuth","user":"u","pass":"p"}
+      DigestAuth  — {"type":"DigestAuth","user":"u","pass":"p"}
+      BearerToken — {"type":"BearerToken","token":"<sf_session_or_access_token>"}
+                    Pass UserInfo.getSessionId() from Apex for Salesforce file downloads.
+    """
     if not auth_config:
         return None
     auth_type = auth_config.get('type', '')
     user = auth_config.get('user', '')
     password = auth_config.get('pass', '')
+
+    if auth_type == 'BearerToken':
+        token = auth_config.get('token', '')
+        if token:
+            # Return a callable that requests will use as an auth hook
+            return _BearerAuth(token)
+        return None
+
     if auth_type in ('BasicAuth', 'DigestAuth') and user:
         if auth_type == 'DigestAuth':
             from requests.auth import HTTPDigestAuth
             return HTTPDigestAuth(user, password)
         return (user, password)
+
     return None
+
+
+class _BearerAuth(requests.auth.AuthBase):
+    """Attaches a Bearer token to requests."""
+    def __init__(self, token: str):
+        self.token = token
+
+    def __call__(self, r):
+        r.headers['Authorization'] = f'Bearer {self.token}'
+        return r
 
 

@@ -1,0 +1,2 @@
+[console_scripts]
+sf-printer-server = sf_printer_server.main:main

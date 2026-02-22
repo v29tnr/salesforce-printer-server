@@ -1,3 +1,29 @@
+Metadata-Version: 2.4
+Name: sf-printer-server
+Version: 0.1.0
+Summary: A server for managing printers and print jobs using Salesforce platform events.
+Author-email: Your Name <youremail@example.com>
+License: MIT
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: requests>=2.25.1
+Requires-Dist: simple-salesforce>=1.12.0
+Requires-Dist: toml>=0.10.2
+Requires-Dist: grpcio>=1.50.0
+Requires-Dist: grpcio-tools>=1.50.0
+Requires-Dist: avro-python3>=1.10.0
+Requires-Dist: certifi>=2021.5.30
+Requires-Dist: sqlalchemy>=2.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=6.2.4; extra == "dev"
+Requires-Dist: black>=21.7b0; extra == "dev"
+Requires-Dist: mypy>=0.910; extra == "dev"
+Dynamic: license-file
+
 # Salesforce Printer Server
 
 A production-ready server for managing printers and print jobs using Salesforce Platform Events.

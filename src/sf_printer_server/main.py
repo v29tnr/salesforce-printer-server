@@ -9,7 +9,7 @@ import signal
 from pathlib import Path
 from sf_printer_server.config.manager import ConfigManager
 from sf_printer_server.auth.manager import AuthManager
-from sf_printer_server.salesforce.cometd import SalesforceCometD
+from sf_printer_server.salesforce.pubsub import SalesforcePubSubClient
 
 
 def setup_logging(config: ConfigManager):
@@ -47,106 +47,49 @@ async def start_server():
         access_token = auth_manager.get_access_token()
         logger.info("✓ Authentication successful")
         
-        # Verify token works with a test API call
+        # Get org information
         instance_url = config.get('salesforce.instance_url')
         actual_instance_url = auth_manager.oauth_client.instance_url_from_token or instance_url
         
-        logger.info("Testing API access with token...")
+        # Get org ID (tenant ID) for Pub/Sub API
+        logger.info("Retrieving org ID...")
         import aiohttp
         import json
+        
+        org_id = None
         try:
             async with aiohttp.ClientSession() as session:
                 headers = {"Authorization": f"Bearer {access_token}"}
                 
-                # Test REST API
-                test_url = f"{actual_instance_url}/services/data/v57.0/"
-                async with session.get(test_url, headers=headers) as resp:
+                # Get org info from REST API
+                identity_url = f"{actual_instance_url}/services/oauth2/userinfo"
+                async with session.get(identity_url, headers=headers) as resp:
                     if resp.status == 200:
-                        logger.info("✓ Token valid for REST API")
+                        user_info = await resp.json()
+                        org_id = user_info.get('organization_id')
+                        logger.info(f"✓ Org ID: {org_id}")
                     else:
-                        logger.warning(f"REST API test returned status {resp.status}: {await resp.text()}")
-                
-                # Decode JWT to see what's inside
-                import base64
-                try:
-                    token_parts = access_token.split('.')
-                    if len(token_parts) >= 2:
-                        # Decode payload (add padding if needed)
-                        payload = token_parts[1]
-                        payload += '=' * (4 - len(payload) % 4)
-                        decoded = json.loads(base64.b64decode(payload))
-                        logger.info(f"JWT scopes: {decoded.get('scope', 'No scope field in JWT')}")
-                        logger.info(f"JWT sub: {decoded.get('sub', 'N/A')}")
-                        logger.info(f"JWT aud: {decoded.get('aud', 'N/A')}")
-                except Exception as e:
-                    logger.debug(f"Could not decode JWT: {e}")
-                    
+                        logger.error(f"Failed to get org ID: {resp.status}")
+                        
         except Exception as e:
-            logger.error(f"Token test failed: {e}")
+            logger.error(f"Error retrieving org ID: {e}")
+            sys.exit(1)
         
-        logger.info("Connecting to Salesforce Streaming API...")
-        client_id = config.get('auth.client_id')
+        if not org_id:
+            logger.error("Could not retrieve org ID. Please check authentication.")
+            sys.exit(1)
         
-        # IMPORTANT: JWT Bearer tokens don't work with Streaming API (CometD)
-        # Priority order for Streaming API tokens:
-        # 1. Username-Password OAuth token (from config.streaming_password) ✅ Works!
-        # 2. Web Server OAuth token (stored from browser login) ✅ Works!
-        # 3. JWT Bearer token ❌ Doesn't work with Streaming API
+        # For Pub/Sub API, we can use any valid OAuth token (JWT, Web OAuth, etc.)
+        # Unlike Streaming API (CometD), Pub/Sub API works with all token types
+        logger.info("Initializing Pub/Sub API client...")
         
-        logger.info("Getting Streaming API token...")
-        
-        from sf_printer_server.auth.oauth import SalesforceOAuthClient
-        
-        streaming_token = None
-        
-        # Option 1: Check if streaming_password is configured (highest priority)
-        streaming_password = config.get('auth.streaming_password')
-        if streaming_password:
-            logger.info("Using Username-Password OAuth for Streaming API...")
-            username = config.get('auth.username')
-            
-            web_oauth = SalesforceOAuthClient(
-                client_id=client_id,
-                client_secret=config.get('auth.client_secret', ''),
-                instance_url=config.get('salesforce.instance_url')
-            )
-            
-            if web_oauth.authenticate_client_credentials(username, streaming_password):
-                streaming_token = web_oauth.access_token
-                logger.info("✓ Got Streaming API token via Username-Password OAuth")
-            else:
-                logger.error("Failed to authenticate with streaming_password")
-        
-        # Option 2: Check if we have a web OAuth token (from auth-setup.sh)
-        if not streaming_token:
-            web_oauth = SalesforceOAuthClient(
-                client_id=client_id,
-                client_secret=config.get('auth.client_secret', ''),
-                instance_url=config.get('salesforce.instance_url')
-            )
-            
-            # Auto-refresh token if expired
-            if web_oauth.access_token and web_oauth.ensure_authenticated():
-                streaming_token = web_oauth.access_token
-                logger.info("✓ Using Web OAuth token for Streaming API (auto-refreshed if needed)")
-        
-        # Option 3: Fall back to JWT token (won't work with Streaming API)
-        if not streaming_token:
-            logger.warning("⚠️  No Streaming API token available!")
-            logger.warning("   JWT tokens don't work with Streaming API.")
-            logger.warning("   Run './auth-setup.sh' for browser-based authentication (recommended)")
-            logger.warning("   OR add 'streaming_password' to config (password + security token)")
-            streaming_token = access_token
-        
-        cometd = SalesforceCometD(
-            endpoint=f"{actual_instance_url}/cometd/57.0",
-            client_id=client_id,
-            client_secret=config.get('auth.client_secret', ''),
-            access_token=streaming_token,
-            instance_url=actual_instance_url
+        pubsub_client = SalesforcePubSubClient(
+            access_token=access_token,
+            instance_url=actual_instance_url,
+            tenant_id=org_id
         )
         
-        await cometd.start()
+        await pubsub_client.start()
         
         # Subscribe to platform events
         # TODO: Get event name from config or Salesforce metadata
@@ -159,7 +102,7 @@ async def start_server():
             # TODO: Process print job and send to printer
         
         # Keep running and listening for events
-        await cometd.subscribe_to_events(event_channel, handle_print_job)
+        await pubsub_client.subscribe_to_events(event_channel, handle_print_job)
         
     except KeyboardInterrupt:
         logger.info("Shutting down...")

@@ -23,8 +23,13 @@ RUN pip install --no-cache-dir \
 COPY pubsub_api.proto ./
 COPY scripts ./scripts
 
+# Create source directory structure for stub generation
+RUN mkdir -p /app/src/sf_printer_server/salesforce
+
 # Generate gRPC stub files
-RUN python scripts/generate_stubs.py
+RUN python scripts/generate_stubs.py && \
+    ls -la /app/src/sf_printer_server/salesforce/pubsub_api_pb2*.py || \
+    (echo "ERROR: Stub generation failed!" && exit 1)
 
 # Copy rest of source code
 COPY src/ ./src/

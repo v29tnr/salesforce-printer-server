@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Auth_Config__c</fullName>
+    <label>Auth Config</label>
+    <description>JSON HTTP auth credentials for *_uri content downloads. Leave blank for public URLs.
+Format: {"type":"BasicAuth","user":"username","pass":"password"}
+Supported types: BasicAuth, DigestAuth</description>
+    <type>LongTextArea</type>
+    <length>131072</length>
+    <visibleLines>3</visibleLines>
+</CustomField>

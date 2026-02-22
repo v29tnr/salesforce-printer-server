@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Correlation_Id__c</fullName>
+    <label>Correlation Id</label>
+    <description>UUID for idempotency. Server ignores duplicate events with the same Correlation_Id__c.</description>
+    <type>Text</type>
+    <length>36</length>
+    <required>false</required>
+</CustomField>

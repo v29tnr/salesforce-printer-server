@@ -5,7 +5,7 @@ instance_url = ""
 # Salesforce API version
 api_version = "60.0"
 # Platform Event channel to subscribe to
-platform_event_channel = "/event/Print_Job__e"
+platform_event_channel = "/event/SF_Printer_Event__e"
 
 [auth]
 # OAuth Client Credentials flow — no user password required.

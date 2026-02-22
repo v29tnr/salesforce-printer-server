@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Options__c</fullName>
+    <label>Options</label>
+    <description>JSON blob for PDF print options. Ignored for RAW/ZPL.
+Valid keys: copies, duplex (long-edge|short-edge|one-sided), paper (e.g. A4|Letter|4x6),
+dpi (e.g. 600x600), bin, collate (bool), color (bool), rotate (0|90|180|270),
+fit_to_page (bool), pages (e.g. 1,3-5), media, nup (2|4|6|9|16).</description>
+    <type>LongTextArea</type>
+    <length>131072</length>
+    <visibleLines>3</visibleLines>
+</CustomField>

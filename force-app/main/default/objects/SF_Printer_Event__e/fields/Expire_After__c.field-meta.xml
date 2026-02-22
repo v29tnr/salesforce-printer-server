@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Expire_After__c</fullName>
+    <label>Expire After</label>
+    <description>Seconds after which an undelivered job is discarded. Leave blank for default (no expiry).</description>
+    <type>Number</type>
+    <precision>8</precision>
+    <scale>0</scale>
+    <required>false</required>
+</CustomField>

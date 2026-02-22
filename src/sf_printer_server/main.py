@@ -6,6 +6,7 @@ import asyncio
 import logging
 from sf_printer_server.config.manager import ConfigManager
 from sf_printer_server.salesforce.pubsub import SalesforcePubSubClient
+from sf_printer_server.jobs.processor import process_event
 
 
 def setup_logging(config: ConfigManager):
@@ -42,19 +43,15 @@ async def start_server():
             login_url=instance_url,
         )
 
-        event_channel = config.get('salesforce.platform_event_channel', '/event/Print_Job__e')
+        event_channel = config.get('salesforce.platform_event_channel', '/event/SF_Printer_Event__e')
         logger.info(f"Subscribing to: {event_channel}")
-
-        def handle_print_job(event):
-            logger.info(f"Received print job: {event}")
-            # TODO: Process print job and send to printer
 
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
             None,
             pubsub_client.subscribe_to_events,
             event_channel,
-            handle_print_job,
+            process_event,
         )
 
     except KeyboardInterrupt:

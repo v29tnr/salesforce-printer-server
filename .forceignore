@@ -1,0 +1,4 @@
+.forceignore
+**/jsconfig.json
+**/.eslintrc.json
+**/node_modules

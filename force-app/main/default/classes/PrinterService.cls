@@ -50,6 +50,9 @@ public with sharing class PrinterService {
 
         @InvocableVariable(label='Expire After (seconds)' description='Discard job if not delivered within this many seconds')
         public Integer expireAfter;
+
+        @InvocableVariable(label='Auth Config JSON' description='HTTP auth for downloading *_uri content. e.g. {"type":"BearerToken","token":"<session>"} or {"type":"BasicAuth","user":"u","pass":"p"}')
+        public String authConfig;
     }
 
     // -------------------------------------------------------------------------
@@ -105,6 +108,7 @@ public with sharing class PrinterService {
             evt.Qty__c          = req.qty != null ? req.qty : 1;
             evt.Options__c      = req.optionsJson;
             evt.Expire_After__c = req.expireAfter;
+            evt.Auth_Config__c  = req.authConfig;
             evt.ZPL_Config__c   = buildZplConfig(printer);
 
             events.add(evt);

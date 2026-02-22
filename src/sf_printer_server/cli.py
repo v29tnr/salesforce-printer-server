@@ -61,6 +61,11 @@ def run_setup(interactive: bool = True):
 
     print("\n=== Salesforce Auth Setup ===")
     print("Press Enter to keep the current value.\n")
+    print("Auth options:")
+    print("  [1] Client Credentials (recommended) — client_id + client_secret only, no user password")
+    print("      Requires 'Enable Client Credentials Flow' on your Connected App with a Run As user.")
+    print("  [2] Username-Password — client_id + client_secret + username + password+token")
+    print()
 
     # --- Salesforce section ---
     instance_url = _prompt("Instance URL (e.g. https://myorg.my.salesforce.com)",
@@ -76,11 +81,11 @@ def run_setup(interactive: bool = True):
                             get('auth', 'client_secret'), secret=True)
     set_val('auth', 'client_secret', client_secret)
 
-    username = _prompt("Salesforce Username",
+    username = _prompt("Salesforce Username (only needed for Username-Password flow)",
                        get('auth', 'username'))
     set_val('auth', 'username', username)
 
-    streaming_password = _prompt("Password + Security Token (e.g. MyPass123TokenABC)",
+    streaming_password = _prompt("Password + Security Token (leave blank for Client Credentials flow)",
                                  get('auth', 'streaming_password'), secret=True)
     set_val('auth', 'streaming_password', streaming_password)
 
@@ -91,9 +96,10 @@ def run_setup(interactive: bool = True):
         set_val('auth', 'method', 'jwt')
     else:
         set_val('auth', 'private_key_file', '')
-        # Use password method if we have the credentials, otherwise jwt
         if streaming_password and client_secret:
             set_val('auth', 'method', 'password')
+        elif client_secret and not streaming_password:
+            set_val('auth', 'method', 'client_credentials')
         else:
             set_val('auth', 'method', 'jwt')
 

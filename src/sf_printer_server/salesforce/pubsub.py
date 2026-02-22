@@ -35,6 +35,38 @@ except ImportError as e:
     pb2_grpc = None
 
 
+def _oauth_client_credentials_login(login_url: str, client_id: str, client_secret: str):
+    """
+    Authenticate via Salesforce OAuth Client Credentials flow.
+    No user credentials needed — uses only client_id + client_secret.
+    Requires 'Enable Client Credentials Flow' on the Connected App with a Run As user set.
+    Returns an opaque access token compatible with Pub/Sub API.
+    """
+    resp = requests.post(
+        f"{login_url}/services/oauth2/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": client_id,
+            "client_secret": client_secret,
+        }
+    )
+    if not resp.ok:
+        logger.error(f"OAuth client credentials HTTP {resp.status_code}: {resp.text}")
+        resp.raise_for_status()
+
+    token_data = resp.json()
+    access_token = token_data["access_token"]
+    instance_url = token_data["instance_url"]
+
+    # Extract org ID from the id URL
+    id_url = token_data.get("id", "")
+    org_id = id_url.rstrip("/").split("/")[-2] if id_url else None
+
+    logger.info(f"OAuth client credentials login successful - org_id: {org_id}, instance_url: {instance_url}")
+    logger.info(f"Token starts with: {access_token[:10]}...")
+    return access_token, org_id, instance_url
+
+
 def _oauth_password_login(login_url: str, client_id: str, client_secret: str, username: str, password: str):
     """
     Authenticate via Salesforce OAuth Username-Password flow.
@@ -97,6 +129,26 @@ class SalesforcePubSubClient:
         self.stub: Optional[pb2_grpc.PubSubStub] = None
         self.latest_replay_id: Optional[bytes] = None
         self.semaphore = threading.Semaphore(1)
+
+    @classmethod
+    def from_client_credentials(cls, client_id: str, client_secret: str, login_url: str = "https://login.salesforce.com"):
+        """
+        Create a PubSubClient using OAuth Client Credentials flow (no user password needed).
+        Requires 'Enable Client Credentials Flow' on the Connected App with a Run As user configured.
+
+        Args:
+            client_id: Connected App Consumer Key
+            client_secret: Connected App Consumer Secret
+            login_url: https://login.salesforce.com (prod) or https://test.salesforce.com (sandbox)
+        """
+        access_token, org_id, instance_url = _oauth_client_credentials_login(
+            login_url, client_id, client_secret
+        )
+        return cls(
+            access_token=access_token,
+            instance_url=instance_url,
+            tenant_id=org_id
+        )
 
     @classmethod
     def from_oauth_password(cls, client_id: str, client_secret: str, username: str, password: str, login_url: str = "https://login.salesforce.com"):

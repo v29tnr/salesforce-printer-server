@@ -84,9 +84,10 @@ async def start_server():
             sys.exit(1)
         
         # Initialize Pub/Sub API client.
-        # The official Salesforce example authenticates via SOAP login (username + password + security token).
-        # We prefer SOAP auth when streaming_password is configured, as JWT tokens can be rejected
-        # by Pub/Sub API on some org configurations.
+        # Auth priority:
+        #   1. Client Credentials flow (client_id + client_secret only, no user password) — best for integration users
+        #   2. OAuth Username-Password flow (client_id + client_secret + username + password)
+        #   3. JWT token fallback (may not work with Pub/Sub API on some orgs)
         logger.info("Initializing Pub/Sub API client...")
 
         streaming_password = config.get('auth.streaming_password', '')
@@ -94,11 +95,18 @@ async def start_server():
         client_id = config.get('auth.client_id', '')
         client_secret = config.get('auth.client_secret', '')
         login_url = config.get('salesforce.instance_url', 'https://login.salesforce.com')
-        # Normalize login_url to login.salesforce.com / test.salesforce.com
-        if 'my.salesforce.com' in login_url or 'develop.my.salesforce.com' in login_url:
+        # Normalize to standard login URL
+        if 'my.salesforce.com' in login_url:
             login_url = 'https://login.salesforce.com'
 
-        if streaming_password and username and client_id and client_secret:
+        if client_id and client_secret and not streaming_password:
+            logger.info("Using OAuth Client Credentials flow for Pub/Sub API (no user credentials needed)")
+            pubsub_client = SalesforcePubSubClient.from_client_credentials(
+                client_id=client_id,
+                client_secret=client_secret,
+                login_url=login_url,
+            )
+        elif streaming_password and username and client_id and client_secret:
             logger.info(f"Using OAuth Username-Password flow for Pub/Sub API (username: {username})")
             pubsub_client = SalesforcePubSubClient.from_oauth_password(
                 client_id=client_id,
@@ -107,16 +115,8 @@ async def start_server():
                 password=streaming_password,
                 login_url=login_url,
             )
-        elif streaming_password and username:
-            logger.warning("client_secret not configured — cannot use OAuth password flow.")
-            logger.warning("Add 'client_secret' to [auth] in your config. Falling back to JWT token.")
-            pubsub_client = SalesforcePubSubClient(
-                access_token=access_token,
-                instance_url=actual_instance_url,
-                tenant_id=org_id
-            )
         else:
-            logger.info("Using OAuth JWT token for Pub/Sub API (no streaming_password configured)")
+            logger.warning("No client_secret configured — falling back to JWT token (may fail on some orgs)")
             pubsub_client = SalesforcePubSubClient(
                 access_token=access_token,
                 instance_url=actual_instance_url,

@@ -28,10 +28,19 @@ COPY src/ ./src/
 COPY examples ./examples
 COPY README.md ./
 
+# Debug: Show what we have before generation
+RUN echo "=== Before stub generation ===" && \
+    ls -la /app/ && \
+    ls -la /app/src/sf_printer_server/salesforce/ || echo "salesforce dir doesn't exist yet"
+
 # Generate gRPC stub files AFTER copying source (so we don't overwrite them)
-RUN python scripts/generate_stubs.py && \
-    ls -la /app/src/sf_printer_server/salesforce/pubsub_api_pb2*.py || \
-    (echo "ERROR: Stub generation failed!" && exit 1)
+RUN echo "=== Generating stubs ===" && \
+    python scripts/generate_stubs.py && \
+    echo "=== After stub generation ===" && \
+    ls -la /app/src/sf_printer_server/salesforce/ && \
+    echo "=== Checking for stub files ===" && \
+    ls -la /app/src/sf_printer_server/salesforce/pubsub_api_pb2*.py && \
+    echo "✓ Stub files verified!"
 
 # Set PYTHONPATH so Python can find the modules
 ENV PYTHONPATH=/app/src

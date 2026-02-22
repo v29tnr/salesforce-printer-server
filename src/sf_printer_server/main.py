@@ -42,7 +42,11 @@ async def start_server():
         streaming_password = config.get('auth.streaming_password', '')
         username = config.get('auth.username', '')
         instance_url = config.get('salesforce.instance_url', 'https://login.salesforce.com')
-        login_url = 'https://login.salesforce.com' if 'my.salesforce.com' in instance_url else instance_url
+        login_url = instance_url.rstrip('/')
+        # Only normalize to login.salesforce.com if it's already a generic login URL
+        # My Domain URLs (*.my.salesforce.com) must be used as-is for token requests
+        if instance_url in ('https://login.salesforce.com', 'https://test.salesforce.com', ''):
+            login_url = 'https://login.salesforce.com'
 
         # --- Client Credentials path: no user auth needed, instance_url/org_id come from token ---
         if client_id and client_secret and not streaming_password:

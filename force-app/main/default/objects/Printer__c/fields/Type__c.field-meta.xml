@@ -2,7 +2,7 @@
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Type__c</fullName>
     <label>Type</label>
-    <description>Printer driver type. Controls how the server routes the job.</description>
+    <description>Printer driver type. zpl = Zebra thermal label printer over TCP (default port 9100). raw = any printer accepting raw bytes over TCP (receipt, thermal, etc.). cups = printer managed by CUPS on the same Linux host as the print server (uses lp command). ipp = network printer with built-in IPP support, e.g. most modern office printers (host field should be the full IPP URL or just the hostname — server connects on port 631).</description>
     <type>Picklist</type>
     <required>true</required>
     <valueSet>
@@ -11,22 +11,22 @@
             <sorted>false</sorted>
             <value>
                 <fullName>zpl</fullName>
-                <label>ZPL (Zebra)</label>
+                <label>ZPL — Zebra thermal label (TCP/9100)</label>
                 <default>true</default>
             </value>
             <value>
                 <fullName>raw</fullName>
-                <label>RAW TCP</label>
+                <label>RAW — raw bytes over TCP</label>
                 <default>false</default>
             </value>
             <value>
                 <fullName>cups</fullName>
-                <label>CUPS</label>
+                <label>CUPS — printer on local CUPS daemon</label>
                 <default>false</default>
             </value>
             <value>
                 <fullName>ipp</fullName>
-                <label>IPP</label>
+                <label>IPP — network printer (office laser/inkjet)</label>
                 <default>false</default>
             </value>
         </valueSetDefinition>

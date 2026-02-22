@@ -2,10 +2,33 @@
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Type__c</fullName>
     <label>Type</label>
-    <description>Printer driver type. Valid values: zpl | raw | cups | ipp</description>
-    <type>Text</type>
-    <length>10</length>
+    <description>Printer driver type. Controls how the server routes the job.</description>
+    <type>Picklist</type>
     <required>true</required>
-    <unique>false</unique>
-    <externalId>false</externalId>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>zpl</fullName>
+                <label>ZPL (Zebra)</label>
+                <default>true</default>
+            </value>
+            <value>
+                <fullName>raw</fullName>
+                <label>RAW TCP</label>
+                <default>false</default>
+            </value>
+            <value>
+                <fullName>cups</fullName>
+                <label>CUPS</label>
+                <default>false</default>
+            </value>
+            <value>
+                <fullName>ipp</fullName>
+                <label>IPP</label>
+                <default>false</default>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
 </CustomField>

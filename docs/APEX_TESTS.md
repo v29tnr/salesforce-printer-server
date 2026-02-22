@@ -33,11 +33,11 @@ insert cv;
 
 ContentVersion saved = [SELECT Id, ContentDocumentId FROM ContentVersion WHERE Id = :cv.Id];
 
-// ── 2. Look up a CUPS or IPP printer (PDF jobs need cups or ipp type) ────────
+// ── 2. Look up a CUPS, IPP or RAW printer (PDF jobs need cups, ipp or raw type) ─
 Printer__c printer = [
     SELECT Id, Name
     FROM   Printer__c
-    WHERE  Type__c IN ('cups', 'ipp')
+    WHERE  Type__c IN ('cups', 'ipp', 'raw')
     AND    Enabled__c = true
     LIMIT  1
 ];
@@ -90,11 +90,11 @@ String downloadUrl = System.URL.getOrgDomainURL().toExternalForm()
     + '/services/data/' + apiVersion + '/sobjects/ContentVersion/'
     + saved.Id + '/VersionData';
 
-// ── 2. Look up a CUPS or IPP printer ─────────────────────────────────────────
+// ── 2. Look up a CUPS, IPP or RAW printer ───────────────────────────────────
 Printer__c printer = [
     SELECT Id, Name
     FROM   Printer__c
-    WHERE  Type__c IN ('cups', 'ipp')
+    WHERE  Type__c IN ('cups', 'ipp', 'raw')
     AND    Enabled__c = true
     LIMIT  1
 ];
@@ -141,11 +141,11 @@ String pdfBase64  = EncodingUtil.base64Encode(cv.VersionData);
 //     + 'startxref\n190\n%%EOF'
 // ));
 
-// ── Look up a CUPS or IPP printer (PDF jobs don't go to ZPL/RAW printers) ────
+// ── Look up a CUPS, IPP or RAW printer (PDF jobs don't go to ZPL printers) ──
 Printer__c printer = [
     SELECT Id, Name
     FROM   Printer__c
-    WHERE  Type__c IN ('cups', 'ipp')
+    WHERE  Type__c IN ('cups', 'ipp', 'raw')
     AND    Enabled__c = true
     LIMIT  1
 ];

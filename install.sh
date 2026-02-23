@@ -108,21 +108,13 @@ echo "  Step 2 of 3 — Enter Credentials"
 echo "==========================================${NC}"
 echo ""
 
-echo -e "${YELLOW}Select Salesforce instance type:${NC}"
-echo "  1. Production   (https://login.salesforce.com)"
-echo "  2. Sandbox      (https://test.salesforce.com)"
-echo "  3. Custom domain"
-read -p "Choice [1]: " instance_choice
-instance_choice=${instance_choice:-1}
-
-case $instance_choice in
-    2) INSTANCE_URL="https://test.salesforce.com" ;;
-    3)
-        read -p "  Enter your My Domain URL (e.g. https://myorg.my.salesforce.com): " custom_domain
-        INSTANCE_URL="${custom_domain}"
-        ;;
-    *) INSTANCE_URL="https://login.salesforce.com" ;;
-esac
+echo "  Client Credentials Flow requires your org's My Domain URL."
+echo "  Find it in Salesforce: Setup → My Domain"
+echo "  Example: https://mycompany.my.salesforce.com"
+echo ""
+read -p "  Instance URL: " INSTANCE_URL
+# Strip trailing slash
+INSTANCE_URL="${INSTANCE_URL%/}"
 
 echo ""
 read -p "  Consumer Key (Client ID): " CLIENT_ID

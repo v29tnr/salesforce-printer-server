@@ -133,8 +133,11 @@ def cmd_setup(_args):
 
     print('─── Step 2 of 3 ── Salesforce Credentials ────────────────')
     print()
-    instance_url = _prompt('Instance URL  (e.g. https://myorg.my.salesforce.com)',
-                           _get(config, 'salesforce', 'instance_url'))
+    print('  Requires your My Domain URL — find it at Setup → My Domain')
+    print('  e.g. https://mycompany.my.salesforce.com  (NOT login.salesforce.com)')
+    print()
+    instance_url = _prompt('Instance URL', _get(config, 'salesforce', 'instance_url'))
+    instance_url = instance_url.rstrip('/')
     client_id     = _prompt('Consumer Key  (from the Connected App)',
                             _get(config, 'auth', 'client_id'))
     client_secret = _prompt('Consumer Secret',

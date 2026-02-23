@@ -42,8 +42,11 @@ RUN echo "=== Generating stubs ===" && \
     ls -la /app/src/sf_printer_server/salesforce/pubsub_api_pb2*.py && \
     echo "✓ Stub files verified!"
 
+# Install the package so the sf-printer CLI entry point is available
+RUN pip install --no-cache-dir .
+
 # Set PYTHONPATH so Python can find the modules
 ENV PYTHONPATH=/app/src
 
-# Command to run the application directly from source
-CMD ["python", "/app/src/sf_printer_server/main.py"]
+# Command to run the application
+CMD ["sf-printer", "start"]

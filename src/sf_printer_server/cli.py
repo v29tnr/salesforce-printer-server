@@ -160,6 +160,18 @@ def cmd_setup(_args):
     print()
 
 
+_PROMPT = '__prompt__'  # sentinel: flag was given without a value → prompt the user
+
+
+def _resolve(value: str, label: str, secret: bool = False) -> str:
+    """If value is the prompt sentinel, ask the user interactively."""
+    if value != _PROMPT:
+        return value
+    if secret:
+        return getpass.getpass(f'  {label}: ')
+    return input(f'  {label}: ').strip()
+
+
 def cmd_config(args):
     """Show config or set individual values via flags."""
     config_path = get_config_path()
@@ -168,29 +180,33 @@ def cmd_config(args):
     changed = False
 
     if args.instance_url is not None:
-        _set(config, 'salesforce', 'instance_url', args.instance_url)
-        print(f'  instance_url  → {args.instance_url}')
+        val = _resolve(args.instance_url, 'Instance URL (e.g. https://myorg.my.salesforce.com)')
+        _set(config, 'salesforce', 'instance_url', val)
+        print(f'  instance_url  → {val}')
         changed = True
     if args.client_id is not None:
-        _set(config, 'auth', 'client_id', args.client_id)
-        print(f'  client_id     → {args.client_id}')
+        val = _resolve(args.client_id, 'Consumer Key (Client ID)')
+        _set(config, 'auth', 'client_id', val)
+        print(f'  client_id     → {val}')
         changed = True
     if args.client_secret is not None:
-        _set(config, 'auth', 'client_secret', args.client_secret)
-        print(f'  client_secret → {_mask(args.client_secret)}')
+        val = _resolve(args.client_secret, 'Consumer Secret', secret=True)
+        _set(config, 'auth', 'client_secret', val)
+        print(f'  client_secret → {_mask(val)}')
         changed = True
     if args.api_version is not None:
-        _set(config, 'salesforce', 'api_version', args.api_version)
-        print(f'  api_version   → {args.api_version}')
+        val = _resolve(args.api_version, 'API Version (e.g. v65.0)')
+        _set(config, 'salesforce', 'api_version', val)
+        print(f'  api_version   → {val}')
         changed = True
 
     if changed:
         config.save_config()
         print(f'\n  ✓ Saved to {config_path}')
-        print('  Restart the server to apply: sf-printer start')
+        print('  Restart the server to apply changes.')
     else:
         # No flags — print current config
-        sf  = config.config.get('salesforce', {})
+        sf   = config.config.get('salesforce', {})
         auth = config.config.get('auth', {})
         print()
         print(f'  Config file   : {config_path}')
@@ -200,7 +216,10 @@ def cmd_config(args):
         print(f'  client_secret : {_mask(auth.get("client_secret", ""))}')
         print(f'  auth_method   : {auth.get("method", "client_credentials")}')
         print()
-        print('  To update:  sf-printer config --client-secret NEW_SECRET')
+        print('  To update (prompts for value if omitted):')
+        print('    sf-printer config --client-id')
+        print('    sf-printer config --client-secret')
+        print('    sf-printer config --instance-url')
         print()
 
 
@@ -267,10 +286,14 @@ def main():
 
     # config
     p_cfg = sub.add_parser('config', help='Show or update configuration')
-    p_cfg.add_argument('--instance-url',  dest='instance_url',  metavar='URL',    help='Salesforce My Domain URL')
-    p_cfg.add_argument('--client-id',     dest='client_id',     metavar='KEY',    help='Connected App Consumer Key')
-    p_cfg.add_argument('--client-secret', dest='client_secret', metavar='SECRET', help='Connected App Consumer Secret')
-    p_cfg.add_argument('--api-version',   dest='api_version',   metavar='VER',    help='Salesforce API version (e.g. v65.0)')
+    p_cfg.add_argument('--instance-url',  dest='instance_url',  nargs='?', const=_PROMPT, metavar='URL',
+                       help='Salesforce My Domain URL (omit value to be prompted)')
+    p_cfg.add_argument('--client-id',     dest='client_id',     nargs='?', const=_PROMPT, metavar='KEY',
+                       help='Consumer Key (omit value to be prompted)')
+    p_cfg.add_argument('--client-secret', dest='client_secret', nargs='?', const=_PROMPT, metavar='SECRET',
+                       help='Consumer Secret (omit value to be prompted securely)')
+    p_cfg.add_argument('--api-version',   dest='api_version',   nargs='?', const=_PROMPT, metavar='VER',
+                       help='Salesforce API version, e.g. v65.0 (omit value to be prompted)')
 
     # verify
     sub.add_parser('verify', help='Test Salesforce connection')

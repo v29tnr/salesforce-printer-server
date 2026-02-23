@@ -2,9 +2,12 @@ DEPLOYMENT.md
 Dockerfile
 LICENSE
 MANIFEST.in
+MIGRATION.md
 README.md
 pyproject.toml
 setup.cfg
+sfdx-project.json
+docs/APEX_TESTS.md
 docs/AUTHENTICATION.md
 docs/AUTH_OVERVIEW.md
 docs/AUTH_QUICKSTART.md
@@ -49,7 +52,9 @@ src/sf_printer_server/printers/drivers.py
 src/sf_printer_server/printers/zpl.py
 src/sf_printer_server/salesforce/__init__.py
 src/sf_printer_server/salesforce/api.py
+src/sf_printer_server/salesforce/callback.py
 src/sf_printer_server/salesforce/cometd.py
+src/sf_printer_server/salesforce/context.py
 src/sf_printer_server/salesforce/metadata.py
 src/sf_printer_server/salesforce/pubsub.py
 tests/__init__.py

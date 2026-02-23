@@ -2,204 +2,144 @@
 
 ## Prerequisites
 - Linux server with Docker installed
-- Access to Salesforce (to create Connected App)
+- Salesforce org access to create a Connected App
 - Network access to your printers
 
-## Quick Deployment (Docker)
+---
 
-### 1. Clone the repository
+## Quick Install (Recommended)
+
 ```bash
 git clone https://github.com/v29tnr/salesforce-printer-server.git
 cd salesforce-printer-server
+chmod +x install.sh
+./install.sh
 ```
 
-### 2. Add your user to docker group (if needed)
-```bash
-sudo usermod -aG docker $USER
-newgrp docker
-```
+The installer will walk you through every step interactively.
 
-### 3. Run deployment script
-```bash
-chmod +x deploy.sh
-./deploy.sh
-```
+---
 
-### 4. Configure Salesforce credentials
+## Step 1 — Create a Salesforce Connected App
+
+> **No certificates, no username/password required.**  
+> Authentication uses **OAuth 2.0 Client Credentials Flow** (Consumer Key + Secret only).
+
+1. **Setup → App Manager → New Connected App**
+
+2. **Basic Info**
+   - Connected App Name: `Printer Server`
+   - API Name: `Printer_Server`
+   - Contact Email: *(your email)*
+
+3. **Enable OAuth Settings**
+   - ✓ Enable OAuth Settings
+   - Callback URL: `https://localhost:8888/oauth/callback`  
+     *(value doesn't matter for client credentials)*
+   - Selected OAuth Scopes:
+     - **Full access** (`full`)
+     - **Access the identity URL service** (`api`)
+
+4. **Flow Enablement** *(scroll down)*
+   - ✓ Enable Authorization Code and Credentials Flow
+   - ✓ Enable Client Credentials Flow
+
+5. **OAuth Policies**
+   - ✓ Require Secret for Web Server Flow
+   - ✓ Require Proof Key for Code Exchange (PKCE)
+
+6. Click **Save** — wait 2–10 minutes for changes to propagate.
+
+7. Go back to the Connected App → **Manage Consumer Details**  
+   Copy your **Consumer Key** and **Consumer Secret**.
+
+---
+
+## Step 2 — Configure the Server
+
+The installer writes `config/config.toml` automatically. To edit it manually:
+
 ```bash
 nano config/config.toml
 ```
 
-Update with your Salesforce settings:
 ```toml
+# Salesforce Printer Server Configuration
+
 [salesforce]
-instance_url = "https://login.salesforce.com"  # or https://test.salesforce.com for sandbox
+instance_url = "https://login.salesforce.com"   # or https://test.salesforce.com
 
 [auth]
-method = "jwt"  # or "password" for testing
-client_id = "YOUR_CONSUMER_KEY"
-username = "your.integration.user@company.com"
-private_key_file = "/app/certs/private_key.pem"
+method        = "client_credentials"
+client_id     = "YOUR_CONSUMER_KEY"
+client_secret = "YOUR_CONSUMER_SECRET"
 
-[printer]
-default_printer = "Zebra_Printer_1"
-zpl_enabled = true
-
-[print_job]
-max_retries = 3
-retry_delay = 5
+[logging]
+level = "INFO"
 ```
 
-### 5. Set up JWT Authentication (Recommended)
-
-#### Generate certificates locally
+After editing, restart the container:
 ```bash
-mkdir -p certs
-cd certs
-
-# Generate private key
-openssl genrsa -out private_key.pem 2048
-
-# Generate certificate (valid 2 years)
-openssl req -new -x509 -key private_key.pem -out certificate.crt -days 730 \
-  -subj "/C=US/ST=CA/L=SF/O=PrinterServer/CN=SF-Printer-Server"
-
-cd ..
+docker compose restart
 ```
 
-#### Create Connected App in Salesforce
-1. Go to **Setup → App Manager → New Connected App**
-2. Fill in:
-   - **Connected App Name**: Printer Server
-   - **API Name**: Printer_Server
-   - **Contact Email**: your@email.com
-3. **Enable OAuth Settings**:
-   - ✓ Enable OAuth Settings
-   - **Callback URL**: `https://login.salesforce.com`
-   - **Selected OAuth Scopes**:
-     - Access and manage your data (api)
-     - Perform requests on your behalf at any time (refresh_token, offline_access)
-4. **Scroll down to Flow Enablement**:
-   - ✓ **Enable JWT Bearer Flow**
-   - **Upload Certificate**: `certificate.crt` file from your `certs/` directory
-5. Click **Save** and wait 2-10 minutes for changes to take effect
+---
 
-> **Note**: With JWT Bearer Flow, the "Permitted Users" setting will be greyed out - this is normal. JWT uses server-to-server authentication and doesn't require user approval policies.
+## Docker Commands
 
-6. Ensure your integration user has **API access** enabled in their profile/permission set
+| Action | Command |
+|--------|---------|
+| View logs | `docker compose logs -f` |
+| Stop | `docker compose down` |
+| Restart | `docker compose restart` |
+| Rebuild (after code changes) | `docker compose build --no-cache && docker compose up -d` |
+| Status | `docker compose ps` |
 
-#### Get Consumer Key
-1. Go back to your Connected App (Setup → App Manager)
-2. Click the dropdown arrow → **View** or **Manage**
-3. Copy the **Consumer Key** and paste it into `config/config.toml` as `client_id`
+---
 
-### 6. Start the server
+## Full Wipe & Reinstall
+
 ```bash
-docker-compose up -d
-```
+# Stop and remove container + image
+docker compose down --rmi all
 
-### 7. View logs
-```bash
-docker-compose logs -f
-```
+# Remove the folder completely
+cd ~
+rm -rf salesforce-printer-server
 
-### 8. Verify it's running
-```bash
-docker ps
-```
-
-## Alternative: Manual Deployment (without Docker)
-
-### 1. Install dependencies
-```bash
-sudo apt update
-sudo apt install python3 python3-pip
-
+# Fresh install
+git clone https://github.com/v29tnr/salesforce-printer-server.git
 cd salesforce-printer-server
-pip3 install --user .
+chmod +x install.sh
+./install.sh
 ```
 
-### 2. Run the installer
-```bash
-~/.local/bin/sf-printer-server install
-# OR
-python3 -m sf_printer_server.installer
-```
-
-### 3. Create systemd service
-```bash
-sudo nano /etc/systemd/system/sf-printer-server.service
-```
-
-Add:
-```ini
-[Unit]
-Description=Salesforce Printer Server
-After=network.target
-
-[Service]
-Type=simple
-User=v29
-WorkingDirectory=/home/v29/salesforce-printer-server
-ExecStart=/home/v29/.local/bin/sf-printer-server start
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### 4. Enable and start
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable sf-printer-server
-sudo systemctl start sf-printer-server
-sudo systemctl status sf-printer-server
-```
+---
 
 ## Troubleshooting
 
-### Check logs (Docker)
+### Logs
 ```bash
-docker-compose logs -f sf-printer-server
+docker compose logs -f sf-printer-server
 ```
 
-### Check logs (systemd)
+### Auth errors (401 / invalid_client)
+- Double-check Consumer Key and Secret in `config/config.toml`
+- Ensure **Client Credentials Flow** is enabled on the Connected App
+- Wait the full 2–10 minutes after saving the Connected App in Salesforce
+
+### Container won't start
 ```bash
-sudo journalctl -u sf-printer-server -f
+docker compose logs   # read the error
+docker compose down
+docker compose build --no-cache
+docker compose up -d
 ```
 
-### Restart service
-```bash
-# Docker
-docker-compose restart
-
-# Systemd
-sudo systemctl restart sf-printer-server
-```
-
-### Update deployment
-```bash
-git pull
-docker-compose down
-docker-compose build
-docker-compose up -d
-```
+---
 
 ## Security Notes
 
-- Keep your `config.toml` and `private_key.pem` secure
-- Use JWT authentication for production (not username/password)
-- Restrict file permissions:
-  ```bash
-  chmod 600 config/config.toml
-  chmod 600 certs/private_key.pem
-  ```
-- Consider using Docker secrets for sensitive data in production
-
-## Support
-
-For detailed documentation, see:
-- [docs/AUTHENTICATION.md](docs/AUTHENTICATION.md) - Authentication setup
-- [docs/SALESFORCE_SETUP.md](docs/SALESFORCE_SETUP.md) - Salesforce configuration
-- [docs/AUTH_QUICKSTART.md](docs/AUTH_QUICKSTART.md) - Quick auth guide
+- `config/config.toml` contains your Consumer Secret — keep it out of source control
+- File is created with `chmod 600` by the installer
+- Consider using Docker secrets or environment variables for the secret in high-security environments

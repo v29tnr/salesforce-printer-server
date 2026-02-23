@@ -3,5 +3,6 @@
         "git push": true,
         "git add": true,
         "git commit": true
-    }
+    },
+    "xml.preferences.showSchemaDocumentationType": "none"
 }

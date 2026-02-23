@@ -84,6 +84,9 @@ public with sharing class PrinterService {
 
     // -------------------------------------------------------------------------
     // Invocable entry point — called by Flow or Apex
+    // Creates Print_Job__c records with Status = Queued.
+    // The PrintJobTrigger handles publishing the platform event and advancing
+    // the status to Sent (or Error).
     // -------------------------------------------------------------------------
 
     @InvocableMethod(
@@ -94,10 +97,56 @@ public with sharing class PrinterService {
     public static void send(List<PrintRequest> requests) {
         if (requests == null || requests.isEmpty()) return;
 
-        // ── Resolve Content Document IDs in one SOQL query ─────────────────────
+        List<Print_Job__c> jobs = new List<Print_Job__c>();
+
+        for (PrintRequest req : requests) {
+            if (req.printerId == null) {
+                throw new PrinterServiceException('Printer ID is required.');
+            }
+
+            Print_Job__c job = new Print_Job__c();
+            job.Status__c              = 'Queued';
+            job.Printer__c             = req.printerId;
+            job.Job_Title__c           = req.jobTitle;
+            job.Source__c              = req.source;
+            job.Options_JSON__c        = req.optionsJson;
+            job.Auth_Config__c         = req.authConfig;
+            job.Correlation_Id__c      = String.isNotBlank(req.correlationId) ? req.correlationId : null; // auto-generated in trigger if blank
+            job.Qty__c                 = req.qty != null ? req.qty : 1;
+            job.Expire_After__c        = req.expireAfter;
+
+            if (req.contentDocumentId != null) {
+                job.Content_Document_Id__c = String.valueOf(req.contentDocumentId);
+            } else {
+                job.Content_Type__c = req.contentType;
+                job.Content__c      = req.content;
+            }
+
+            jobs.add(job);
+        }
+
+        insert jobs;
+        // Trigger fires after insert → publishes SF_Printer_Event__e → sets Status to Sent or Error.
+    }
+
+    // -------------------------------------------------------------------------
+    // Event builder — called by PrintJobTriggerHandler (not by external callers)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Build and publish SF_Printer_Event__e for a batch of Queued Print_Job__c records.
+     * Called from PrintJobTriggerHandler.afterInsert() so the trigger never calls
+     * send() (which would cause re-entry).
+     */
+    public static void publishEvents(List<Print_Job__c> jobs) {
+        if (jobs == null || jobs.isEmpty()) return;
+
+        // ── Resolve Content Document IDs ────────────────────────────────────────
         Set<Id> docIds = new Set<Id>();
-        for (PrintRequest r : requests) {
-            if (r.contentDocumentId != null) docIds.add(r.contentDocumentId);
+        for (Print_Job__c j : jobs) {
+            if (String.isNotBlank(j.Content_Document_Id__c)) {
+                docIds.add((Id) j.Content_Document_Id__c);
+            }
         }
         Map<Id, ContentVersion> latestVersionByDocId = new Map<Id, ContentVersion>();
         if (!docIds.isEmpty()) {
@@ -110,10 +159,10 @@ public with sharing class PrinterService {
             }
         }
 
-        // ── Resolve Printer records in one SOQL query ──────────────────────────
+        // ── Resolve Printer records ──────────────────────────────────────────────
         Set<Id> printerIds = new Set<Id>();
-        for (PrintRequest r : requests) {
-            if (r.printerId != null) printerIds.add(r.printerId);
+        for (Print_Job__c j : jobs) {
+            if (j.Printer__c != null) printerIds.add(j.Printer__c);
         }
         Map<Id, Printer__c> printers = new Map<Id, Printer__c>([
             SELECT Id, Name, Host__c, Port__c, Type__c, Enabled__c,
@@ -126,11 +175,11 @@ public with sharing class PrinterService {
         String orgUrl = System.URL.getOrgDomainURL().toExternalForm();
         List<SF_Printer_Event__e> events = new List<SF_Printer_Event__e>();
 
-        for (PrintRequest req : requests) {
-            Printer__c printer = printers.get(req.printerId);
+        for (Print_Job__c job : jobs) {
+            Printer__c printer = printers.get(job.Printer__c);
 
             if (printer == null) {
-                throw new PrinterServiceException('Printer not found: ' + req.printerId);
+                throw new PrinterServiceException('Printer not found: ' + job.Printer__c);
             }
             if (printer.Enabled__c == false) {
                 throw new PrinterServiceException(
@@ -139,27 +188,23 @@ public with sharing class PrinterService {
                 );
             }
 
-            // ── Resolve content from ContentDocument if provided ────────────────
-            String resolvedContentType = req.contentType;
-            String resolvedContent     = req.content;
+            String resolvedContentType = job.Content_Type__c;
+            String resolvedContent     = job.Content__c;
 
-            if (req.contentDocumentId != null) {
-                ContentVersion cv = latestVersionByDocId.get(req.contentDocumentId);
+            if (String.isNotBlank(job.Content_Document_Id__c)) {
+                ContentVersion cv = latestVersionByDocId.get((Id) job.Content_Document_Id__c);
                 if (cv == null) {
                     throw new PrinterServiceException(
-                        'No ContentVersion found for ContentDocument: ' + req.contentDocumentId
+                        'No ContentVersion found for ContentDocument: ' + job.Content_Document_Id__c
                     );
                 }
                 resolvedContent     = orgUrl + '/services/data/' + API_VERSION + '/sobjects/ContentVersion/' + cv.Id + '/VersionData';
                 resolvedContentType = 'pdf_uri';
-                if (String.isBlank(req.jobTitle)) {
-                    req.jobTitle = cv.Title + (String.isNotBlank(cv.FileExtension) ? '.' + cv.FileExtension : '');
-                }
             }
 
             if (String.isBlank(resolvedContent)) {
                 throw new PrinterServiceException(
-                    'No content provided. Supply Content Document ID or Content Type + Content.'
+                    'No content provided for Print Job ' + job.Id + '. Supply Content Document ID or Content Type + Content.'
                 );
             }
             if (String.isBlank(resolvedContentType)) {
@@ -173,13 +218,13 @@ public with sharing class PrinterService {
             evt.Printer_Type__c   = printer.Type__c;
             evt.Content_Type__c   = resolvedContentType;
             evt.Content__c        = resolvedContent;
-            evt.Correlation_Id__c = String.isNotBlank(req.correlationId) ? req.correlationId : generateUUID();
-            evt.Job_Title__c      = req.jobTitle;
-            evt.Source__c         = req.source;
-            evt.Qty__c            = req.qty != null ? req.qty : 1;
-            evt.Options__c        = req.optionsJson;
-            evt.Expire_After__c   = req.expireAfter;
-            evt.Auth_Config__c    = req.authConfig;
+            evt.Correlation_Id__c = job.Correlation_Id__c;
+            evt.Job_Title__c      = job.Job_Title__c;
+            evt.Source__c         = job.Source__c;
+            evt.Qty__c            = job.Qty__c != null ? (Integer) job.Qty__c : 1;
+            evt.Options__c        = job.Options_JSON__c;
+            evt.Expire_After__c   = job.Expire_After__c != null ? (Integer) job.Expire_After__c : null;
+            evt.Auth_Config__c    = job.Auth_Config__c;
             evt.ZPL_Config__c     = buildZplConfig(printer);
 
             events.add(evt);
@@ -190,7 +235,7 @@ public with sharing class PrinterService {
             for (Integer i = 0; i < results.size(); i++) {
                 if (!results[i].isSuccess()) {
                     for (Database.Error e : results[i].getErrors()) {
-                        System.debug(LoggingLevel.ERROR, 'PrinterService: ' + e.getMessage());
+                        System.debug(LoggingLevel.ERROR, 'PrinterService.publishEvents: ' + e.getMessage());
                     }
                 }
             }

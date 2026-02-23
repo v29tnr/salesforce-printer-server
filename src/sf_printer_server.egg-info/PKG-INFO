@@ -13,6 +13,7 @@ License-File: LICENSE
 Requires-Dist: requests>=2.25.1
 Requires-Dist: simple-salesforce>=1.12.0
 Requires-Dist: toml>=0.10.2
+Requires-Dist: aiohttp>=3.8.0
 Requires-Dist: grpcio>=1.50.0
 Requires-Dist: grpcio-tools>=1.50.0
 Requires-Dist: avro-python3>=1.10.0

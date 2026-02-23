@@ -1,5 +1,6 @@
 #!/bin/bash
 # One-command installer for Salesforce Printer Server
+# Authentication: OAuth Client Credentials Flow (Consumer Key + Secret only)
 
 set -e
 
@@ -15,7 +16,8 @@ echo "  Salesforce Printer Server Installer"
 echo "=========================================="
 echo -e "${NC}"
 
-# Check Docker
+# ── Docker check ────────────────────────────────────────────────────────────
+
 if ! command -v docker &> /dev/null; then
     echo -e "${RED}❌ Docker not found. Installing Docker...${NC}"
     curl -fsSL https://get.docker.com -o get-docker.sh
@@ -25,7 +27,6 @@ if ! command -v docker &> /dev/null; then
     exit 0
 fi
 
-# Check Docker permissions
 if ! docker ps &> /dev/null; then
     echo -e "${YELLOW}⚠️  Adding user to docker group...${NC}"
     sudo usermod -aG docker $USER
@@ -36,15 +37,14 @@ EONG
     exit 0
 fi
 
-# Check docker-compose
 if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null 2>&1; then
     echo -e "${YELLOW}⚠️  Installing docker-compose...${NC}"
-    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+        -o /usr/local/bin/docker-compose
     sudo chmod +x /usr/local/bin/docker-compose
     echo -e "${GREEN}✓ docker-compose installed${NC}"
 fi
 
-# Determine which docker compose command to use
 if command -v docker-compose &> /dev/null; then
     DOCKER_COMPOSE="docker-compose"
 elif docker compose version &> /dev/null 2>&1; then
@@ -54,210 +54,134 @@ else
     exit 1
 fi
 
-# Create directories
-echo -e "${BLUE}📁 Creating directories...${NC}"
-mkdir -p config certs
+mkdir -p config
 
-# Interactive configuration
+# ── Step 1: Connected App instructions ──────────────────────────────────────
+
 echo ""
 echo -e "${BLUE}=========================================="
-echo "  Configuration Setup"
+echo "  Step 1 of 3 — Salesforce Connected App"
+echo "==========================================${NC}"
+echo ""
+echo "If you haven't already, create a Connected App in Salesforce:"
+echo ""
+echo "  1. Go to:  Setup → App Manager → New Connected App"
+echo ""
+echo "  2. Basic Info:"
+echo "       • Connected App Name: Printer Server"
+echo "       • API Name:           Printer_Server"
+echo "       • Contact Email:      (your email)"
+echo ""
+echo "  3. Enable OAuth Settings:"
+echo "       ✓ Enable OAuth Settings"
+echo "       • Callback URL: https://localhost:8888/oauth/callback"
+echo "         (the value doesn't matter for client credentials)"
+echo "       • Selected OAuth Scopes:"
+echo "           – Full access (full)"
+echo "           – Access the identity URL service (api)"
+echo ""
+echo "  4. Flow Enablement (scroll down):"
+echo "       ✓ Enable Authorization Code and Credentials Flow"
+echo "       ✓ Enable Client Credentials Flow"
+echo ""
+echo "  5. OAuth Policies:"
+echo "       ✓ Require Secret for Web Server Flow"
+echo "       ✓ Require Proof Key for Code Exchange (PKCE)"
+echo ""
+echo "  6. Click Save — wait 2–10 minutes for changes to propagate."
+echo ""
+echo "  7. After saving, go back to the Connected App:"
+echo "       Setup → App Manager → (find Printer Server) → View"
+echo "       Click 'Manage Consumer Details'"
+echo "       Copy your Consumer Key and Consumer Secret."
+echo ""
+echo -e "${YELLOW}  ⚠️  No certificate upload required."
+echo "  ⚠️  No username or password needed.${NC}"
+echo ""
+read -p "Press ENTER when your Connected App is ready and you have the Consumer Key + Secret..."
+
+# ── Step 2: Credentials ──────────────────────────────────────────────────────
+
+echo ""
+echo -e "${BLUE}=========================================="
+echo "  Step 2 of 3 — Enter Credentials"
 echo "==========================================${NC}"
 echo ""
 
-# Salesforce instance
 echo -e "${YELLOW}Select Salesforce instance type:${NC}"
-echo "  1. Production (login.salesforce.com)"
-echo "  2. Sandbox (test.salesforce.com)"
+echo "  1. Production   (https://login.salesforce.com)"
+echo "  2. Sandbox      (https://test.salesforce.com)"
 echo "  3. Custom domain"
 read -p "Choice [1]: " instance_choice
 instance_choice=${instance_choice:-1}
 
 case $instance_choice in
     2) INSTANCE_URL="https://test.salesforce.com" ;;
-    3) 
-        read -p "Enter your custom domain: " custom_domain
+    3)
+        read -p "  Enter your My Domain URL (e.g. https://myorg.my.salesforce.com): " custom_domain
         INSTANCE_URL="${custom_domain}"
         ;;
     *) INSTANCE_URL="https://login.salesforce.com" ;;
 esac
 
-# Auth method
 echo ""
-echo -e "${YELLOW}Select authentication method:${NC}"
-echo "  1. JWT (Recommended for production)"
-echo "  2. Username/Password (Testing only)"
-read -p "Choice [1]: " auth_choice
-auth_choice=${auth_choice:-1}
-
-if [ "$auth_choice" = "1" ]; then
-    AUTH_METHOD="jwt"
-    
-    # Generate certificates
-    echo ""
-    echo -e "${BLUE}🔐 Generating SSL certificates...${NC}"
-    cd certs
-    openssl genrsa -out private_key.pem 2048 2>/dev/null
-    openssl req -new -x509 -key private_key.pem -out certificate.crt -days 730 \
-        -subj "/C=US/ST=CA/L=SF/O=PrinterServer/CN=SF-Printer-Server" 2>/dev/null
-    chmod 600 private_key.pem
-    cd ..
-    echo -e "${GREEN}✓ Certificates generated in ./certs/${NC}"
-    
-    # Show Connected App instructions
-    echo ""
-    echo -e "${BLUE}=========================================="
-    echo "  Salesforce Connected App Setup"
-    echo "==========================================${NC}"
-    echo ""
-    echo "Please create a Connected App in Salesforce:"
-    echo ""
-    echo "1. Go to: Setup → App Manager → New Connected App"
-    echo "2. Fill in:"
-    echo "   • Name: Printer Server"
-    echo "   • API Name: Printer_Server"
-    echo "   • Contact Email: (your email)"
-    echo ""
-    echo "3. Enable OAuth Settings:"
-    echo "   ✓ Enable OAuth Settings"
-    echo "   • Callback URL: ${INSTANCE_URL}"
-    echo ""
-    echo "4. Flow Enablement (scroll down):"
-    echo "   ✓ Enable JWT Bearer Flow"
-    echo "   • Upload Certificate (OR copy/paste below)"
-    echo ""
-    echo -e "${YELLOW}=========================================="
-    echo "  CERTIFICATE (Copy this entire block)"
-    echo "==========================================${NC}"
-    cat certs/certificate.crt
-    echo -e "${YELLOW}=========================================="
-    echo "  (End of certificate)"
-    echo "==========================================${NC}"
-    echo ""
-    echo "5. OAuth Scopes:"
-    echo "   • Full access (full) - REQUIRED for Streaming API"
-    echo "   • Perform requests on your behalf at any time (refresh_token, offline_access)"
-    echo ""
-    echo "6. OAuth Flow Enablement (scroll down):"
-    echo "   ✓ Enable Device Flow (Optional)"
-    echo "   [NOTE: Username-Password flow is enabled by default for Streaming API]"
-    echo ""
-    echo "7. Click 'Save' and wait 2-10 minutes for changes to take effect"
-    echo ""
-    echo -e "${GREEN}Note: For JWT authentication, 'Permitted Users' will be greyed out - this is normal!"
-    echo "JWT uses server-to-server authentication and doesn't require user approval.${NC}"
-    echo ""
-    echo "8. Ensure your integration user has:"
-    echo "   • API Enabled (Setup → Users → Permission Sets)"
-    echo "   • Security Token reset (an email will be sent)"
-    echo ""
-    
-    read -p "Press ENTER when ready to continue..."
-    
-    read -p "Consumer Key: " CLIENT_ID
-    read -p "Integration user email: " USERNAME
-    
-    echo ""
-    echo -e "${YELLOW}=========================================="
-    echo "  Streaming API Authentication"
-    echo "==========================================${NC}"
-    echo "JWT tokens don't work with Salesforce Streaming API (CometD)."
-    echo "You need to also provide password + security token for Streaming API access."
-    echo ""
-    echo "Get your security token:"
-    echo "  Setup → My Personal Information → Reset My Security Token"
-    echo "  (A new token will be emailed to you)"
-    echo ""
-    
-    read -sp "Password for ${USERNAME}: " PASSWORD
-    echo ""
-    read -p "Security Token: " SECURITY_TOKEN
-    STREAMING_PASSWORD="${PASSWORD}${SECURITY_TOKEN}"
-    
-    PRIVATE_KEY_FILE="/app/certs/private_key.pem"
-    
-else
-    AUTH_METHOD="password"
-    
-    echo ""
-    read -p "Consumer Key: " CLIENT_ID
-    read -p "Consumer Secret: " CLIENT_SECRET
-    read -p "Username: " USERNAME
-    read -sp "Password: " PASSWORD
-    echo ""
-    read -p "Security Token: " SECURITY_TOKEN
-    FULL_PASSWORD="${PASSWORD}${SECURITY_TOKEN}"
-fi
-
-
-# Create config file
+read -p "  Consumer Key (Client ID): " CLIENT_ID
+read -sp "  Consumer Secret:          " CLIENT_SECRET
 echo ""
-echo -e "${BLUE}📝 Creating configuration file...${NC}"
+
+# ── Step 3: Write config & build ─────────────────────────────────────────────
+
+echo ""
+echo -e "${BLUE}=========================================="
+echo "  Step 3 of 3 — Save & Start"
+echo "==========================================${NC}"
+echo ""
 
 cat > config/config.toml << EOF
 # Salesforce Printer Server Configuration
+# Generated by install.sh
 
 [salesforce]
 instance_url = "${INSTANCE_URL}"
 
 [auth]
-method = "${AUTH_METHOD}"
-client_id = "${CLIENT_ID}"
-username = "${USERNAME}"
-EOF
-
-if [ "$AUTH_METHOD" = "jwt" ]; then
-    cat >> config/config.toml << EOF
-private_key_file = "${PRIVATE_KEY_FILE}"
-streaming_password = "${STREAMING_PASSWORD}"
-EOF
-else
-    cat >> config/config.toml << EOF
+method        = "client_credentials"
+client_id     = "${CLIENT_ID}"
 client_secret = "${CLIENT_SECRET}"
-password = "${FULL_PASSWORD}"
-EOF
-fi
-
-cat >> config/config.toml << EOF
 
 [logging]
 level = "INFO"
 EOF
 
 chmod 600 config/config.toml
+echo -e "${GREEN}  ✓ Configuration saved to config/config.toml${NC}"
 
-echo -e "${GREEN}✓ Configuration saved${NC}"
-
-# Build Docker image
 echo ""
-echo -e "${BLUE}🐋 Building Docker image...${NC}"
+echo -e "${BLUE}  🐋 Building Docker image (this takes a minute)...${NC}"
 $DOCKER_COMPOSE build --no-cache
 
-# Start service
 echo ""
-echo -e "${BLUE}🚀 Starting service...${NC}"
+echo -e "${BLUE}  🚀 Starting service...${NC}"
 $DOCKER_COMPOSE up -d --force-recreate
 
-# Wait a moment
 sleep 2
 
-# Check status
 if docker ps | grep -q sf-printer-server; then
     echo ""
     echo -e "${GREEN}=========================================="
     echo "  ✅ Installation Complete!"
     echo "==========================================${NC}"
     echo ""
-    echo "Service is running!"
+    echo "  Service is running!"
     echo ""
-    echo "Useful commands:"
-    echo "  • View logs:    $DOCKER_COMPOSE logs -f"
-    echo "  • Stop service: $DOCKER_COMPOSE down"
-    echo "  • Restart:      $DOCKER_COMPOSE restart"
-    echo "  • Status:       $DOCKER_COMPOSE ps"
+    echo "  Useful commands:"
+    echo "    View logs:    $DOCKER_COMPOSE logs -f"
+    echo "    Stop:         $DOCKER_COMPOSE down"
+    echo "    Restart:      $DOCKER_COMPOSE restart"
+    echo "    Update key:   nano config/config.toml   (then $DOCKER_COMPOSE restart)"
     echo ""
 else
     echo ""
-    echo -e "${YELLOW}⚠️  Service may not have started correctly${NC}"
-    echo "Check logs with: $DOCKER_COMPOSE logs"
+    echo -e "${YELLOW}  ⚠️  Service may not have started correctly.${NC}"
+    echo "  Check logs:  $DOCKER_COMPOSE logs"
 fi

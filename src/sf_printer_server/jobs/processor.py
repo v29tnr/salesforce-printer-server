@@ -15,19 +15,7 @@ import requests
 from sf_printer_server.jobs.models import PrintJob
 from sf_printer_server.printers.drivers import get_printer_driver, get_printer_info
 from sf_printer_server.salesforce.context import is_salesforce_url, get_access_token, refresh_token
-
-# ---------------------------------------------------------------------------
-# TODO (next session): Salesforce response events
-# ---------------------------------------------------------------------------
-# After each job succeeds or fails, publish a SF_Printer_Response__e back to
-# Salesforce via REST POST to /services/data/v60.0/sobjects/SF_Printer_Response__e
-# Fields: Correlation_Id__c, Status__c (success|failed), Error_Message__c, Printed_At__c
-# The auth token is already available from the pubsub client — pass it through.
-# A Salesforce Flow subscribes to SF_Printer_Response__e and upserts Print_Job__c
-# on Correlation_Id__c (ExternalId) to stamp the final status on the record.
-# Also: query_zebra_info / get_printer_info can be exposed via a 'discover' event
-# type so Salesforce can request printer config on demand and receive it in a response.
-# ---------------------------------------------------------------------------
+from sf_printer_server.salesforce.callback import update_print_job
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +58,12 @@ def _handle_print_job(event: dict) -> bool:
 
     if not job.printer_host:
         logger.error(f"Print job has no Printer_Host__c — cannot route: {job}")
+        update_print_job(job.correlation_id, success=False, message='No Printer_Host__c on event')
         return False
 
     if not job.content:
         logger.error(f"Print job has no content: {job}")
+        update_print_job(job.correlation_id, success=False, message='No content on event')
         return False
 
     logger.info(f"Processing: {job}")
@@ -82,6 +72,7 @@ def _handle_print_job(event: dict) -> bool:
         content_bytes = _resolve_content(job)
     except Exception as e:
         logger.error(f"Failed to resolve content for {job}: {e}", exc_info=True)
+        update_print_job(job.correlation_id, success=False, message=f'Failed to resolve content: {e}')
         return False
 
     driver = get_printer_driver(
@@ -100,21 +91,28 @@ def _handle_print_job(event: dict) -> bool:
             qty = max(1, job.qty)
             for i in range(qty):
                 if not driver.print_raw(content_bytes):
-                    logger.error(f"Raw print failed on attempt {i + 1}/{qty} for {job}")
+                    msg = f'Raw print failed on attempt {i + 1}/{qty}'
+                    logger.error(f"{msg} for {job}")
+                    update_print_job(job.correlation_id, success=False, message=msg)
                     return False
             logger.info(f"Raw print job complete — {qty} copy/copies sent to {job.printer_host}:{job.printer_port}")
         elif job.is_pdf:
             if not driver.print_pdf(content_bytes, job.options):
-                logger.error(f"PDF print failed for {job}")
+                msg = 'PDF print failed'
+                logger.error(f"{msg} for {job}")
+                update_print_job(job.correlation_id, success=False, message=msg)
                 return False
             logger.info(f"PDF print job complete — sent to {job.printer_host}:{job.printer_port}")
         else:
             logger.error(f"Unknown content_type {job.content_type!r} for {job}")
+            update_print_job(job.correlation_id, success=False, message=f'Unknown content_type: {job.content_type!r}')
             return False
     except Exception as e:
         logger.error(f"Print error for {job}: {e}", exc_info=True)
+        update_print_job(job.correlation_id, success=False, message=f'Print error: {e}')
         return False
 
+    update_print_job(job.correlation_id, success=True)
     return True
 
 

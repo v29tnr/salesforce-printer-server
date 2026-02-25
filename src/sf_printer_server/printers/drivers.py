@@ -504,10 +504,16 @@ class IPPDriver(PrinterDriver):
             ppm_pattern = str(Path(tmpdir) / 'page%03d.ppm')
             pdf_path.write_bytes(content)
 
-            # Do NOT use -dQUIET — we need stderr to diagnose failures
             result = subprocess.run(
                 [
-                    'gs', '-dNOPAUSE', '-dBATCH', '-dSAFER',
+                    'gs',
+                    '-dNOPAUSE', '-dBATCH',
+                    # Repair-tolerant: don't abort on xref errors
+                    '-dPDFSTOPONERROR=false',
+                    # Allow font substitution when embedded fonts are missing
+                    '-dNOPLATFONTS',
+                    '-sFONTPATH=/usr/share/fonts:/usr/share/ghostscript/fonts',
+                    '-dNOFONTMAP',
                     '-sDEVICE=ppmraw', f'-r{_DPI}',
                     f'-sOutputFile={ppm_pattern}',
                     str(pdf_path),
@@ -520,8 +526,6 @@ class IPPDriver(PrinterDriver):
             gs_stdout = result.stdout.decode(errors='replace').strip()
             if gs_stderr:
                 logger.debug(f"Ghostscript stderr: {gs_stderr}")
-            if gs_stdout:
-                logger.debug(f"Ghostscript stdout: {gs_stdout}")
 
             if result.returncode != 0:
                 detail = gs_stderr or gs_stdout or '(no output)'
@@ -529,8 +533,6 @@ class IPPDriver(PrinterDriver):
                     f"PDF rasterisation failed (gs exit {result.returncode}): {detail}"
                 )
 
-            # Glob for all patterns gs might use (%03d → page001.ppm,
-            # but some builds use %d → page1.ppm)
             page_files = sorted(Path(tmpdir).glob('page*.ppm'))
             if not page_files:
                 all_files = [f.name for f in Path(tmpdir).iterdir()]

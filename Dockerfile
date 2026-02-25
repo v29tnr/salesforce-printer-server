@@ -5,10 +5,12 @@ WORKDIR /app
 
 # Install system dependencies
 # cups-client  — lp/lpstat for CUPS-type printers
-# ghostscript  — PDF rasterisation / URF conversion (no ipptransform needed)
+# ghostscript  — PDF rasterisation / URF conversion
+# gsfonts      — standard PostScript/PDF fonts (Helvetica, Times, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cups-client \
     ghostscript \
+    gsfonts \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first

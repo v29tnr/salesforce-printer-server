@@ -7,17 +7,20 @@ No static config required — the server is stateless with respect to printers.
 Types:
   zpl  — Zebra / raw TCP socket (port 9100 default)
   raw  — Generic raw TCP socket
-  cups — CUPS queue via lp, no PDF conversions needed
-  ipp  — IPP printer via CUPS using constructed ipp:// URI
+  cups — CUPS queue via lp (printer must be registered in local CUPS daemon)
+  ipp  — Direct IPP over HTTP — no CUPS daemon or printer registration needed
 """
 
 import re
 import socket
+import struct
 import subprocess
 import tempfile
 import logging
 from pathlib import Path
 from typing import Optional
+
+import requests as _requests
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +237,137 @@ class CUPSDriver(PrinterDriver):
 
 
 # ---------------------------------------------------------------------------
+# IPP (direct IPP/1.1 over HTTP — no CUPS daemon or printer registration)
+# ---------------------------------------------------------------------------
+
+class IPPDriver(PrinterDriver):
+    """
+    Sends print jobs directly via IPP/1.1 over HTTP.
+    No local CUPS daemon or printer queue registration required.
+    The printer only needs to be reachable on the network at host:port.
+    """
+
+    def __init__(self, host: str, port: int):
+        super().__init__(host, port)
+        self.printer_uri = f"ipp://{host}:{port}/ipp/print"
+        self.http_url    = f"http://{host}:{port}/ipp/print"
+
+    def print_raw(self, content: bytes) -> bool:
+        return self._ipp_send(content, document_format='application/octet-stream')
+
+    def print_pdf(self, content: bytes, options: dict) -> bool:
+        copies = 1
+        if options:
+            try:
+                copies = max(1, int(options.get('copies', 1)))
+            except (TypeError, ValueError):
+                pass
+        return self._ipp_send(content, document_format='application/pdf', copies=copies)
+
+    def test_connection(self) -> bool:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(5)
+                s.connect((self.host, self.port))
+            return True
+        except Exception:
+            return False
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _attr(tag: int, name: str, value) -> bytes:
+        """Encode a single IPP attribute (tag + name + value)."""
+        name_b = name.encode('utf-8')
+        if isinstance(value, str):
+            value_b = value.encode('utf-8')
+        elif isinstance(value, int):
+            value_b = struct.pack('>i', value)   # IPP integer = signed 4-byte BE
+        else:
+            value_b = bytes(value)
+        return (
+            struct.pack('>B', tag)
+            + struct.pack('>H', len(name_b)) + name_b
+            + struct.pack('>H', len(value_b)) + value_b
+        )
+
+    def _ipp_send(
+        self,
+        content: bytes,
+        document_format: str = 'application/pdf',
+        copies: int = 1,
+        job_name: str = 'Print Job',
+    ) -> bool:
+        a = self._attr
+
+        # ── IPP/1.1 Print-Job request ──────────────────────────────────
+        ipp  = struct.pack('>BBH', 1, 1, 0x0002)   # version 1.1, op=Print-Job
+        ipp += struct.pack('>I', 1)                 # request-id
+
+        # Operation-attributes group (tag 0x01)
+        ipp += b'\x01'
+        ipp += a(0x47, 'attributes-charset',          'utf-8')
+        ipp += a(0x48, 'attributes-natural-language', 'en')
+        ipp += a(0x45, 'printer-uri',                 self.printer_uri)
+        ipp += a(0x42, 'requesting-user-name',        'sf-printer-server')
+        ipp += a(0x42, 'job-name',                    job_name)
+        ipp += a(0x49, 'document-format',             document_format)
+
+        # Job-attributes group (tag 0x02) — only if copies > 1
+        if copies > 1:
+            ipp += b'\x02'
+            ipp += a(0x21, 'copies', copies)
+
+        ipp += b'\x03'    # end-of-attributes
+        ipp += content    # document data
+
+        try:
+            logger.info(
+                f"IPP → {self.http_url} ({len(content)} bytes, "
+                f"format={document_format}, copies={copies})"
+            )
+            resp = _requests.post(
+                self.http_url,
+                data=ipp,
+                headers={'Content-Type': 'application/ipp'},
+                timeout=60,
+            )
+
+            if resp.status_code != 200 or len(resp.content) < 8:
+                logger.error(
+                    f"IPP HTTP error {resp.status_code} from {self.host}:{self.port}"
+                )
+                return False
+
+            status = struct.unpack('>H', resp.content[2:4])[0]
+            if status == 0x0000:
+                logger.info(f"✓ IPP job accepted by {self.host}:{self.port}")
+                return True
+
+            # 0x0001 = successful-ok-ignored-or-substituted-attributes (still success)
+            if status == 0x0001:
+                logger.info(
+                    f"✓ IPP job accepted (with substituted attributes) "
+                    f"by {self.host}:{self.port}"
+                )
+                return True
+
+            logger.error(
+                f"IPP error status 0x{status:04x} from {self.host}:{self.port}"
+            )
+            return False
+
+        except _requests.Timeout:
+            logger.error(f"IPP request timed out for {self.host}:{self.port}")
+            return False
+        except Exception as e:
+            logger.error(f"IPP send error: {e}", exc_info=True)
+            return False
+
+
+# ---------------------------------------------------------------------------
 # Options mapping — Options__c JSON → lp -o flags
 # ---------------------------------------------------------------------------
 
@@ -306,8 +440,10 @@ def get_printer_driver(host: str, port: int, printer_type: str) -> PrinterDriver
     t = (printer_type or 'raw').lower().strip()
     if t in ('zpl', 'raw'):
         return RawTCPDriver(host, port)
-    elif t in ('cups', 'ipp'):
+    elif t == 'cups':
         return CUPSDriver(host, port)
+    elif t == 'ipp':
+        return IPPDriver(host, port)
     else:
         logger.warning(f"Unknown printer_type '{t}' — falling back to RawTCPDriver")
         return RawTCPDriver(host, port)

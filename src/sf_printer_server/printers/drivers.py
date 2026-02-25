@@ -332,9 +332,9 @@ class IPPDriver(PrinterDriver):
 
     def _pick_pdf_format(self) -> str:
         """
-        Return the best document-format to use for PDF jobs.
+        Return the document-format to use for PDF jobs.
         Queries the printer once and caches the result.
-        Preference order: application/pdf → application/octet-stream.
+        Raises PrinterError if the printer does not support application/pdf.
         """
         key = f"{self.host}:{self.port}"
         if key not in _ipp_format_cache:
@@ -342,21 +342,25 @@ class IPPDriver(PrinterDriver):
 
         supported = _ipp_format_cache[key]
         if not supported:
-            # Query failed — try pdf and let the printer reject if needed
+            # Query failed — attempt PDF and let the printer reject it with a clear status
+            logger.warning(
+                f"IPP: could not query supported formats from {key}, "
+                f"attempting application/pdf"
+            )
             return 'application/pdf'
 
-        for preferred in ('application/pdf', 'application/octet-stream'):
-            if preferred in supported:
-                logger.debug(f"IPP format selected for {key}: {preferred}")
-                return preferred
+        logger.info(f"IPP supported formats for {key}: {supported}")
 
-        # Last resort — use whatever the printer listed first
-        fallback = supported[0]
-        logger.warning(
-            f"IPP: neither application/pdf nor application/octet-stream supported "
-            f"by {key}; using {fallback}"
+        if 'application/pdf' in supported:
+            logger.info(f"IPP: using application/pdf for {key}")
+            return 'application/pdf'
+
+        raise PrinterError(
+            f"Printer {self.host}:{self.port} does not support application/pdf. "
+            f"Supported formats: {', '.join(supported)}. "
+            f"The printer may need a firmware update, or try a CUPS print server "
+            f"that can convert PDF to a supported format."
         )
-        return fallback
 
     def _query_supported_formats(self) -> list:
         """

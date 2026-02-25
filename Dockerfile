@@ -3,6 +3,11 @@ FROM python:3.9-slim
 # Set the working directory
 WORKDIR /app
 
+# Install system dependencies (CUPS client for IPP/CUPS printing)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cups-client \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first
 RUN pip install --no-cache-dir --upgrade pip
 

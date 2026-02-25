@@ -167,7 +167,7 @@ public with sharing class PrinterService {
         Map<Id, Printer__c> printers = new Map<Id, Printer__c>([
             SELECT Id, Name, Host__c, Port__c, Type__c, Enabled__c,
                    DPI__c, Label_Width_mm__c, Label_Height_mm__c,
-                   Darkness__c, ZPL_Prefix__c
+                   Darkness__c, ZPL_Prefix__c, Default_Paper_Size__c
             FROM Printer__c
             WHERE Id IN :printerIds
         ]);
@@ -222,7 +222,7 @@ public with sharing class PrinterService {
             evt.Job_Title__c      = job.Job_Title__c;
             evt.Source__c         = job.Source__c;
             evt.Qty__c            = job.Qty__c != null ? (Integer) job.Qty__c : 1;
-            evt.Options__c        = job.Options_JSON__c;
+            evt.Options__c        = mergeDefaultPaper(job.Options_JSON__c, printer.Default_Paper_Size__c);
             evt.Expire_After__c   = job.Expire_After__c != null ? (Integer) job.Expire_After__c : null;
             evt.Auth_Config__c    = job.Auth_Config__c;
             evt.ZPL_Config__c     = buildZplConfig(printer);
@@ -245,6 +245,36 @@ public with sharing class PrinterService {
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Merge printer-level default paper size into the job options JSON.
+     * Per-job 'paper' key (from Options_JSON__c) always wins over the printer default.
+     * Returns null when no options and no default paper are needed.
+     */
+    @TestVisible
+    private static String mergeDefaultPaper(String optionsJson, String defaultPaper) {
+        Boolean hasDefault = String.isNotBlank(defaultPaper);
+        Boolean hasOptions = String.isNotBlank(optionsJson);
+
+        if (!hasDefault && !hasOptions) return null;
+
+        Map<String, Object> opts = new Map<String, Object>();
+        if (hasOptions) {
+            try {
+                opts = (Map<String, Object>) JSON.deserializeUntyped(optionsJson);
+            } catch (Exception e) {
+                // Unparseable options — preserve original string as-is
+                return optionsJson;
+            }
+        }
+
+        // Only inject the printer default when the job doesn't already specify 'paper'
+        if (hasDefault && !opts.containsKey('paper')) {
+            opts.put('paper', defaultPaper);
+        }
+
+        return opts.isEmpty() ? null : JSON.serialize(opts);
+    }
 
     /**
      * Build the ZPL_Config__c JSON from Printer__c fields.

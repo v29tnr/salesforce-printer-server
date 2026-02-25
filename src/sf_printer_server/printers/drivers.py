@@ -409,13 +409,25 @@ class IPPDriver(PrinterDriver):
 
     def print_pdf(self, content: bytes, options: dict) -> bool:
         copies = 1
+        media   = None
+        gs_paper = None
         if options:
             try:
                 copies = max(1, int(options.get('copies', 1)))
             except (TypeError, ValueError):
                 pass
-        fmt, content = self._prepare_pdf(content)
-        return self._ipp_send(content, document_format=fmt, copies=copies)
+            raw_paper = (options.get('paper') or '').strip().lower()
+            if raw_paper:
+                mapping = self._PAPER_MAP.get(raw_paper)
+                if mapping:
+                    media, gs_paper = mapping
+                    logger.debug(f"Paper '{raw_paper}' → IPP media={media}, gs={gs_paper}")
+                else:
+                    # Pass through as-is — user may have used a raw IPP keyword
+                    media = raw_paper
+                    logger.debug(f"Paper '{raw_paper}' not in map, sending as-is")
+        fmt, converted = self._prepare_pdf(content, gs_paper=gs_paper)
+        return self._ipp_send(converted, document_format=fmt, copies=copies, media=media)
 
     def test_connection(self) -> bool:
         try:
@@ -438,11 +450,29 @@ class IPPDriver(PrinterDriver):
         ('image/jpeg',                    '_convert_pdf_to_jpeg'),
     ]
 
-    def _prepare_pdf(self, content: bytes) -> tuple:
+    # Maps simple paper names (from optionsJson / Default_Paper_Size__c) to
+    # (ipp_media_keyword, ghostscript_paper_name).
+    # The IPP media keyword is sent as the 'media' job attribute so the printer
+    # picks the correct tray / reports the right media size.  The gs name is
+    # used in -sPAPERSIZE= when rasterising so page dimensions match the media.
+    _PAPER_MAP: dict = {
+        'a3':     ('iso_a3_297x420mm',      'a3'),
+        'a4':     ('iso_a4_210x297mm',      'a4'),
+        'a5':     ('iso_a5_148x210mm',      'a5'),
+        'letter': ('na_letter_8.5x11in',    'letter'),
+        'legal':  ('na_legal_8.5x14in',     'legal'),
+        'b4':     ('jis_b4_257x364mm',      'b4'),
+        'b5':     ('jis_b5_182x257mm',      'b5'),
+        'executive': ('na_executive_7.25x10.5in', 'executive'),
+    }
+
+    def _prepare_pdf(self, content: bytes, gs_paper: str = None) -> tuple:
         """
         Return (document_format, bytes_to_send).
         Sends PDF directly when supported; otherwise converts to the best
         format the printer advertises (URF → PWG → JPEG).
+        gs_paper — Ghostscript paper name (e.g. 'a4', 'letter') used when
+                   rasterising so the raster dimensions match the target media.
         """
         key = f"{self.host}:{self.port}"
         if key not in _ipp_format_cache:
@@ -469,7 +499,7 @@ class IPPDriver(PrinterDriver):
                     f"IPP: printer {key} does not support application/pdf; "
                     f"converting to {ipp_fmt}"
                 )
-                converted = getattr(self, converter)(content)
+                converted = getattr(self, converter)(content, gs_paper=gs_paper)
                 return (ipp_fmt, converted)
 
         raise PrinterError(
@@ -482,11 +512,12 @@ class IPPDriver(PrinterDriver):
     # PDF conversion helpers
     # ------------------------------------------------------------------
 
-    def _convert_pdf_to_urf(self, content: bytes) -> bytes:
+    def _convert_pdf_to_urf(self, content: bytes, gs_paper: str = None) -> bytes:
         """
         Convert PDF → image/urf (Apple Raster / UNIRAST).
         Uses Ghostscript to rasterise pages to PPM, then assembles
         the URF stream in pure Python — no ipptransform required.
+        gs_paper — optional Ghostscript paper name passed as -sPAPERSIZE=
         """
         import shutil
         import tempfile as _tf
@@ -529,18 +560,21 @@ class IPPDriver(PrinterDriver):
                         f"{repair.stderr.decode(errors='replace').strip()[:200]}"
                     )
 
+            gs_cmd = [
+                'gs',
+                '-dNOPAUSE', '-dBATCH',
+                '-dPDFSTOPONERROR=false',
+                '-dNOPLATFONTS',
+                '-sFONTPATH=/usr/share/fonts:/usr/share/ghostscript/fonts',
+                '-dNOFONTMAP',
+                '-sDEVICE=ppmraw', f'-r{_DPI}',
+            ]
+            if gs_paper:
+                gs_cmd += [f'-sPAPERSIZE={gs_paper}', '-dFIXEDMEDIA', '-dPDFFitPage']
+            gs_cmd += [f'-sOutputFile={ppm_pattern}', gs_input]
+
             result = subprocess.run(
-                [
-                    'gs',
-                    '-dNOPAUSE', '-dBATCH',
-                    '-dPDFSTOPONERROR=false',
-                    '-dNOPLATFONTS',
-                    '-sFONTPATH=/usr/share/fonts:/usr/share/ghostscript/fonts',
-                    '-dNOFONTMAP',
-                    '-sDEVICE=ppmraw', f'-r{_DPI}',
-                    f'-sOutputFile={ppm_pattern}',
-                    gs_input,
-                ],
+                gs_cmd,
                 capture_output=True,
                 timeout=120,
             )
@@ -572,15 +606,15 @@ class IPPDriver(PrinterDriver):
             )
             return _assemble_urf(page_files, dpi=_DPI)
 
-    def _convert_pdf_to_pwg(self, content: bytes) -> bytes:
+    def _convert_pdf_to_pwg(self, content: bytes, gs_paper: str = None) -> bytes:
         """Convert PDF → application/vnd.pwg-raster using Ghostscript."""
-        return self._gs_raster(content, device='pwgraster', format_name='PWG raster')
+        return self._gs_raster(content, device='pwgraster', format_name='PWG raster', gs_paper=gs_paper)
 
-    def _convert_pdf_to_jpeg(self, content: bytes) -> bytes:
+    def _convert_pdf_to_jpeg(self, content: bytes, gs_paper: str = None) -> bytes:
         """Convert first page of PDF → image/jpeg using Ghostscript."""
-        return self._gs_raster(content, device='jpeg', format_name='JPEG')
+        return self._gs_raster(content, device='jpeg', format_name='JPEG', gs_paper=gs_paper)
 
-    def _gs_raster(self, content: bytes, device: str, format_name: str) -> bytes:
+    def _gs_raster(self, content: bytes, device: str, format_name: str, gs_paper: str = None) -> bytes:
         """Run Ghostscript to rasterise a PDF to a given output device (stdout)."""
         import shutil
         if not shutil.which('gs'):
@@ -588,14 +622,18 @@ class IPPDriver(PrinterDriver):
                 f"Ghostscript ('gs') is not installed. "
                 f"Add 'ghostscript' to the Docker image."
             )
+        def _build_cmd(src, dst):
+            cmd = ['gs', '-dNOPAUSE', '-dBATCH', '-dQUIET',
+                   f'-sDEVICE={device}', '-r300']
+            if gs_paper:
+                cmd += [f'-sPAPERSIZE={gs_paper}', '-dFIXEDMEDIA', '-dPDFFitPage']
+            cmd += [f'-sOutputFile={dst}', src]
+            return cmd
+
         return self._run_converter(
             content,
             in_suffix='.pdf',
-            cmd_builder=lambda src, dst: [
-                'gs', '-dNOPAUSE', '-dBATCH', '-dQUIET',
-                f'-sDEVICE={device}', '-r300',
-                f'-sOutputFile={dst}', src,
-            ],
+            cmd_builder=_build_cmd,
             out_is_stdout=False,
             format_name=format_name,
         )
@@ -763,6 +801,7 @@ class IPPDriver(PrinterDriver):
         document_format: str = 'application/pdf',
         copies: int = 1,
         job_name: str = 'Print Job',
+        media: str = None,
     ) -> bool:
         a = self._attr
 
@@ -779,10 +818,13 @@ class IPPDriver(PrinterDriver):
         ipp += a(0x42, 'job-name',                    job_name)
         ipp += a(0x49, 'document-format',             document_format)
 
-        # Job-attributes group (tag 0x02) — only if copies > 1
-        if copies > 1:
+        # Job-attributes group (tag 0x02) — copies and/or media
+        if copies > 1 or media:
             ipp += b'\x02'
-            ipp += a(0x21, 'copies', copies)
+            if copies > 1:
+                ipp += a(0x21, 'copies', copies)
+            if media:
+                ipp += a(0x44, 'media', media)  # keyword
 
         ipp += b'\x03'    # end-of-attributes
         ipp += content    # document data
@@ -790,7 +832,7 @@ class IPPDriver(PrinterDriver):
         try:
             logger.info(
                 f"IPP → {self.http_url} ({len(content)} bytes, "
-                f"format={document_format}, copies={copies})"
+                f"format={document_format}, copies={copies}, media={media or 'default'})")
             )
             resp = _requests.post(
                 self.http_url,

@@ -80,6 +80,106 @@ _printer_info_cache: dict = {}
 _ipp_format_cache: dict = {}
 
 
+# ---------------------------------------------------------------------------
+# URF (Apple Raster / UNIRAST) assembler — used by IPPDriver for AirPrint
+# ---------------------------------------------------------------------------
+
+def _read_ppm(path: Path) -> tuple:
+    """
+    Read a binary PPM (P6) file.
+    Returns (width: int, height: int, raw_rgb: bytes).
+    """
+    data = path.read_bytes()
+    assert data[:2] == b'P6', f"Expected binary PPM (P6), got: {data[:2]!r}"
+    tokens = []
+    i = 2
+    while len(tokens) < 3:
+        while i < len(data) and chr(data[i]) in ' \t\r\n':
+            i += 1
+        if i < len(data) and chr(data[i]) == '#':
+            while i < len(data) and data[i] != ord('\n'):
+                i += 1
+            continue
+        j = i
+        while j < len(data) and chr(data[j]) not in ' \t\r\n':
+            j += 1
+        tokens.append(data[i:j].decode())
+        i = j
+    # Single whitespace character after the header separates header from pixels
+    i += 1
+    width, height = int(tokens[0]), int(tokens[1])
+    return width, height, data[i:]
+
+
+def _packbits_urf_row(row_rgb: bytes) -> bytes:
+    """
+    PackBits-compress one scanline for URF.
+    Compression unit = one pixel (3 bytes for 24-bit RGB).
+      N = 0..127   → N+1 literal pixels follow
+      N = 129..255 → repeat next pixel (257-N) times
+    """
+    n = len(row_rgb) // 3
+    px = [row_rgb[i * 3:i * 3 + 3] for i in range(n)]
+    out = bytearray()
+    i = 0
+    while i < n:
+        # Count repeat run
+        j = i + 1
+        while j < n and px[j] == px[i] and j - i < 128:
+            j += 1
+        if j - i > 1:
+            out.append(257 - (j - i))
+            out.extend(px[i])
+            i = j
+            continue
+        # Count literal run
+        j = i + 1
+        while j < n and j - i < 128:
+            if j + 1 < n and px[j] == px[j + 1]:
+                break
+            j += 1
+        out.append(j - i - 1)
+        for k in range(i, j):
+            out.extend(px[k])
+        i = j
+    return bytes(out)
+
+
+def _assemble_urf(page_files, dpi: int) -> bytes:
+    """
+    Build a URF (UNIRAST) byte stream from an ordered list of PPM page files.
+
+    URF page header (32 bytes):
+      BitsPerPixel  uint8   = 24
+      ColorSpace    uint8   = 1 (sRGB)
+      Duplex        uint8   = 0 (simplex)
+      Quality       uint8   = 4 (normal)
+      reserved      uint32  = 0
+      reserved      uint32  = 0
+      Width         uint32 BE
+      Height        uint32 BE
+      HWResolution  uint32 BE (DPI)
+      padding       8 bytes = 0
+    """
+    out = bytearray()
+    out += b'UNIRAST\x00'
+    out += struct.pack('>I', len(page_files))
+
+    for pf in page_files:
+        width, height, raw_rgb = _read_ppm(pf)
+        # Page header (32 bytes)
+        out += struct.pack('>BBBB', 24, 1, 0, 4)
+        out += struct.pack('>II', 0, 0)
+        out += struct.pack('>III', width, height, dpi)
+        out += b'\x00' * 8
+        # Compressed scanlines
+        row_bytes = width * 3
+        for y in range(height):
+            out += _packbits_urf_row(raw_rgb[y * row_bytes:(y + 1) * row_bytes])
+
+    return bytes(out)
+
+
 def query_zebra_info(host: str, port: int, timeout: float = SGD_QUERY_TIMEOUT) -> dict:
     """
     Query a Zebra printer via SGD (Set/Get/Do) over TCP.
@@ -383,22 +483,52 @@ class IPPDriver(PrinterDriver):
     # ------------------------------------------------------------------
 
     def _convert_pdf_to_urf(self, content: bytes) -> bytes:
-        """Convert PDF → image/urf using ipptransform (from cups-filters)."""
+        """
+        Convert PDF → image/urf (Apple Raster / UNIRAST).
+        Uses Ghostscript to rasterise pages to PPM, then assembles
+        the URF stream in pure Python — no ipptransform required.
+        """
         import shutil
-        if not shutil.which('ipptransform'):
+        import tempfile as _tf
+
+        if not shutil.which('gs'):
             raise PrinterError(
-                f"Printer {self.host}:{self.port} requires image/urf but 'ipptransform' "
-                f"is not installed. Add 'cups-filters' to the Docker image."
+                "Ghostscript ('gs') is not installed. "
+                "Add 'ghostscript' to the Docker image."
             )
-        return self._run_converter(
-            content,
-            in_suffix='.pdf',
-            cmd_builder=lambda src, dst: [
-                'ipptransform', '-f', 'image/urf', '-i', 'application/pdf', src
-            ],
-            out_is_stdout=True,
-            format_name='image/urf',
-        )
+
+        _DPI = 300
+
+        with _tf.TemporaryDirectory() as tmpdir:
+            pdf_path    = Path(tmpdir) / 'input.pdf'
+            ppm_pattern = str(Path(tmpdir) / 'page%03d.ppm')
+            pdf_path.write_bytes(content)
+
+            result = subprocess.run(
+                [
+                    'gs', '-dNOPAUSE', '-dBATCH', '-dQUIET',
+                    '-sDEVICE=ppmraw', f'-r{_DPI}',
+                    f'-sOutputFile={ppm_pattern}',
+                    str(pdf_path),
+                ],
+                capture_output=True,
+                timeout=120,
+            )
+            if result.returncode != 0:
+                raise PrinterError(
+                    f"PDF rasterisation failed: "
+                    f"{result.stderr.decode(errors='replace').strip()}"
+                )
+
+            page_files = sorted(Path(tmpdir).glob('page*.ppm'))
+            if not page_files:
+                raise PrinterError("Ghostscript produced no rasterised pages")
+
+            logger.info(
+                f"URF: rasterised {len(page_files)} page(s) at {_DPI} dpi "
+                f"for {self.host}:{self.port}"
+            )
+            return _assemble_urf(page_files, dpi=_DPI)
 
     def _convert_pdf_to_pwg(self, content: bytes) -> bytes:
         """Convert PDF → application/vnd.pwg-raster using Ghostscript."""

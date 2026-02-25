@@ -4,13 +4,11 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Install system dependencies
-# cups-client    — lp/lpstat for CUPS-type printers
-# ghostscript    — PDF rasterisation for printers that don't accept application/pdf
-# cups-filters   — ipptransform: PDF → image/urf (AirPrint / Canon / HP)
+# cups-client  — lp/lpstat for CUPS-type printers
+# ghostscript  — PDF rasterisation / URF conversion (no ipptransform needed)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cups-client \
     ghostscript \
-    cups-filters \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first

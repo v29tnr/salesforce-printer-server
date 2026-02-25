@@ -504,9 +504,10 @@ class IPPDriver(PrinterDriver):
             ppm_pattern = str(Path(tmpdir) / 'page%03d.ppm')
             pdf_path.write_bytes(content)
 
+            # Do NOT use -dQUIET — we need stderr to diagnose failures
             result = subprocess.run(
                 [
-                    'gs', '-dNOPAUSE', '-dBATCH', '-dQUIET',
+                    'gs', '-dNOPAUSE', '-dBATCH', '-dSAFER',
                     '-sDEVICE=ppmraw', f'-r{_DPI}',
                     f'-sOutputFile={ppm_pattern}',
                     str(pdf_path),
@@ -514,15 +515,31 @@ class IPPDriver(PrinterDriver):
                 capture_output=True,
                 timeout=120,
             )
+
+            gs_stderr = result.stderr.decode(errors='replace').strip()
+            gs_stdout = result.stdout.decode(errors='replace').strip()
+            if gs_stderr:
+                logger.debug(f"Ghostscript stderr: {gs_stderr}")
+            if gs_stdout:
+                logger.debug(f"Ghostscript stdout: {gs_stdout}")
+
             if result.returncode != 0:
+                detail = gs_stderr or gs_stdout or '(no output)'
                 raise PrinterError(
-                    f"PDF rasterisation failed: "
-                    f"{result.stderr.decode(errors='replace').strip()}"
+                    f"PDF rasterisation failed (gs exit {result.returncode}): {detail}"
                 )
 
+            # Glob for all patterns gs might use (%03d → page001.ppm,
+            # but some builds use %d → page1.ppm)
             page_files = sorted(Path(tmpdir).glob('page*.ppm'))
             if not page_files:
-                raise PrinterError("Ghostscript produced no rasterised pages")
+                all_files = [f.name for f in Path(tmpdir).iterdir()]
+                detail = (gs_stderr or gs_stdout or '(no gs output)')
+                raise PrinterError(
+                    f"Ghostscript produced no rasterised pages (exit 0). "
+                    f"Files in tmpdir: {all_files}. "
+                    f"gs output: {detail[:300]}"
+                )
 
             logger.info(
                 f"URF: rasterised {len(page_files)} page(s) at {_DPI} dpi "

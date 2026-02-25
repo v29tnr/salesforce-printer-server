@@ -7,10 +7,12 @@ WORKDIR /app
 # cups-client  — lp/lpstat for CUPS-type printers
 # ghostscript  — PDF rasterisation / URF conversion
 # gsfonts      — standard PostScript/PDF fonts (Helvetica, Times, etc.)
+# qpdf         — PDF repair / xref reconstruction before rasterisation
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cups-client \
     ghostscript \
     gsfonts \
+    qpdf \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first

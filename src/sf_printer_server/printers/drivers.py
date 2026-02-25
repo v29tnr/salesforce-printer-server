@@ -500,23 +500,46 @@ class IPPDriver(PrinterDriver):
         _DPI = 300
 
         with _tf.TemporaryDirectory() as tmpdir:
-            pdf_path    = Path(tmpdir) / 'input.pdf'
-            ppm_pattern = str(Path(tmpdir) / 'page%03d.ppm')
+            pdf_path     = Path(tmpdir) / 'input.pdf'
+            pdf_repaired = Path(tmpdir) / 'repaired.pdf'
+            ppm_pattern  = str(Path(tmpdir) / 'page%03d.ppm')
             pdf_path.write_bytes(content)
+
+            # ── Step 1: repair xref / linearise with qpdf (handles broken
+            # xref tables, wrong byte offsets, etc.)  Falls back to original
+            # if qpdf is not installed or fails.
+            import shutil as _shutil
+            gs_input = str(pdf_path)
+            if _shutil.which('qpdf'):
+                repair = subprocess.run(
+                    ['qpdf', '--replace-input', str(pdf_path)],
+                    capture_output=True,
+                    timeout=30,
+                )
+                if repair.returncode in (0, 3):  # 3 = repaired with warnings
+                    gs_input = str(pdf_path)     # --replace-input edits in place
+                    if repair.returncode == 3:
+                        logger.debug(
+                            f"qpdf repaired PDF with warnings: "
+                            f"{repair.stderr.decode(errors='replace').strip()[:200]}"
+                        )
+                else:
+                    logger.debug(
+                        f"qpdf failed (exit {repair.returncode}), proceeding with original: "
+                        f"{repair.stderr.decode(errors='replace').strip()[:200]}"
+                    )
 
             result = subprocess.run(
                 [
                     'gs',
                     '-dNOPAUSE', '-dBATCH',
-                    # Repair-tolerant: don't abort on xref errors
                     '-dPDFSTOPONERROR=false',
-                    # Allow font substitution when embedded fonts are missing
                     '-dNOPLATFONTS',
                     '-sFONTPATH=/usr/share/fonts:/usr/share/ghostscript/fonts',
                     '-dNOFONTMAP',
                     '-sDEVICE=ppmraw', f'-r{_DPI}',
                     f'-sOutputFile={ppm_pattern}',
-                    str(pdf_path),
+                    gs_input,
                 ],
                 capture_output=True,
                 timeout=120,

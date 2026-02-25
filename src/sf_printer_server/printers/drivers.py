@@ -158,8 +158,9 @@ def _assemble_urf(page_files, dpi: int) -> bytes:
       reserved      uint32  = 0
       Width         uint32 BE
       Height        uint32 BE
-      HWResolution  uint32 BE (DPI)
-      padding       8 bytes = 0
+      HWResolutionX uint32 BE (DPI, horizontal)
+      HWResolutionY uint32 BE (DPI, vertical)   ← must match X; 0 corrupts output
+      padding       4 bytes = 0
     """
     out = bytearray()
     out += b'UNIRAST\x00'
@@ -168,10 +169,11 @@ def _assemble_urf(page_files, dpi: int) -> bytes:
     for pf in page_files:
         width, height, raw_rgb = _read_ppm(pf)
         # Page header (32 bytes)
-        out += struct.pack('>BBBB', 24, 1, 0, 4)
-        out += struct.pack('>II', 0, 0)
-        out += struct.pack('>III', width, height, dpi)
-        out += b'\x00' * 8
+        out += struct.pack('>BBBB', 24, 1, 0, 4)     # bpp, colorspace, duplex, quality
+        out += struct.pack('>II', 0, 0)               # reserved
+        out += struct.pack('>II', width, height)      # page dimensions
+        out += struct.pack('>II', dpi, dpi)           # HWResolutionX, HWResolutionY
+        out += b'\x00' * 4                            # padding
         # Compressed scanlines
         row_bytes = width * 3
         for y in range(height):
@@ -838,7 +840,7 @@ class IPPDriver(PrinterDriver):
                 self.http_url,
                 data=ipp,
                 headers={'Content-Type': 'application/ipp'},
-                timeout=60,
+                timeout=300,   # Canon AirPrint holds connection until job finishes printing
             )
 
             if resp.status_code != 200 or len(resp.content) < 8:

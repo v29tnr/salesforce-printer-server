@@ -314,7 +314,7 @@ class IPPDriver(PrinterDriver):
                 copies = max(1, int(options.get('copies', 1)))
             except (TypeError, ValueError):
                 pass
-        fmt = self._pick_pdf_format()
+        fmt, content = self._prepare_pdf(content)
         return self._ipp_send(content, document_format=fmt, copies=copies)
 
     def test_connection(self) -> bool:
@@ -330,37 +330,164 @@ class IPPDriver(PrinterDriver):
     # Format discovery
     # ------------------------------------------------------------------
 
-    def _pick_pdf_format(self) -> str:
+    # Conversion preference order when application/pdf is not natively supported.
+    # Each entry: (ipp_format, converter_fn_name)
+    _CONVERT_PREFERENCE = [
+        ('image/urf',                     '_convert_pdf_to_urf'),
+        ('application/vnd.pwg-raster',    '_convert_pdf_to_pwg'),
+        ('image/jpeg',                    '_convert_pdf_to_jpeg'),
+    ]
+
+    def _prepare_pdf(self, content: bytes) -> tuple:
         """
-        Return the document-format to use for PDF jobs.
-        Queries the printer once and caches the result.
-        Raises PrinterError if the printer does not support application/pdf.
+        Return (document_format, bytes_to_send).
+        Sends PDF directly when supported; otherwise converts to the best
+        format the printer advertises (URF → PWG → JPEG).
         """
         key = f"{self.host}:{self.port}"
         if key not in _ipp_format_cache:
             _ipp_format_cache[key] = self._query_supported_formats()
 
         supported = _ipp_format_cache[key]
+
         if not supported:
-            # Query failed — attempt PDF and let the printer reject it with a clear status
             logger.warning(
                 f"IPP: could not query supported formats from {key}, "
-                f"attempting application/pdf"
+                f"attempting application/pdf directly"
             )
-            return 'application/pdf'
+            return ('application/pdf', content)
 
         logger.info(f"IPP supported formats for {key}: {supported}")
 
         if 'application/pdf' in supported:
-            logger.info(f"IPP: using application/pdf for {key}")
-            return 'application/pdf'
+            logger.info(f"IPP: sending application/pdf directly to {key}")
+            return ('application/pdf', content)
+
+        for ipp_fmt, converter in self._CONVERT_PREFERENCE:
+            if ipp_fmt in supported:
+                logger.info(
+                    f"IPP: printer {key} does not support application/pdf; "
+                    f"converting to {ipp_fmt}"
+                )
+                converted = getattr(self, converter)(content)
+                return (ipp_fmt, converted)
 
         raise PrinterError(
-            f"Printer {self.host}:{self.port} does not support application/pdf. "
-            f"Supported formats: {', '.join(supported)}. "
-            f"The printer may need a firmware update, or try a CUPS print server "
-            f"that can convert PDF to a supported format."
+            f"Printer {self.host}:{self.port} does not support application/pdf and "
+            f"no automatic conversion path is available for its formats: "
+            f"{', '.join(supported)}."
         )
+
+    # ------------------------------------------------------------------
+    # PDF conversion helpers
+    # ------------------------------------------------------------------
+
+    def _convert_pdf_to_urf(self, content: bytes) -> bytes:
+        """Convert PDF → image/urf using ipptransform (from cups-filters)."""
+        import shutil
+        if not shutil.which('ipptransform'):
+            raise PrinterError(
+                f"Printer {self.host}:{self.port} requires image/urf but 'ipptransform' "
+                f"is not installed. Add 'cups-filters' to the Docker image."
+            )
+        return self._run_converter(
+            content,
+            in_suffix='.pdf',
+            cmd_builder=lambda src, dst: [
+                'ipptransform', '-f', 'image/urf', '-i', 'application/pdf', src
+            ],
+            out_is_stdout=True,
+            format_name='image/urf',
+        )
+
+    def _convert_pdf_to_pwg(self, content: bytes) -> bytes:
+        """Convert PDF → application/vnd.pwg-raster using Ghostscript."""
+        return self._gs_raster(content, device='pwgraster', format_name='PWG raster')
+
+    def _convert_pdf_to_jpeg(self, content: bytes) -> bytes:
+        """Convert first page of PDF → image/jpeg using Ghostscript."""
+        return self._gs_raster(content, device='jpeg', format_name='JPEG')
+
+    def _gs_raster(self, content: bytes, device: str, format_name: str) -> bytes:
+        """Run Ghostscript to rasterise a PDF to a given output device (stdout)."""
+        import shutil
+        if not shutil.which('gs'):
+            raise PrinterError(
+                f"Ghostscript ('gs') is not installed. "
+                f"Add 'ghostscript' to the Docker image."
+            )
+        return self._run_converter(
+            content,
+            in_suffix='.pdf',
+            cmd_builder=lambda src, dst: [
+                'gs', '-dNOPAUSE', '-dBATCH', '-dQUIET',
+                f'-sDEVICE={device}', '-r300',
+                f'-sOutputFile={dst}', src,
+            ],
+            out_is_stdout=False,
+            format_name=format_name,
+        )
+
+    @staticmethod
+    def _run_converter(
+        content: bytes,
+        in_suffix: str,
+        cmd_builder,
+        out_is_stdout: bool,
+        format_name: str,
+    ) -> bytes:
+        """Write content to a temp file, run cmd, return output bytes."""
+        import tempfile
+        tmp_in  = None
+        tmp_out = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=in_suffix
+            ) as f:
+                tmp_in = f.name
+                f.write(content)
+
+            if out_is_stdout:
+                cmd = cmd_builder(tmp_in, None)
+                result = subprocess.run(
+                    cmd, capture_output=True, timeout=120
+                )
+                if result.returncode != 0:
+                    raise PrinterError(
+                        f"PDF → {format_name} conversion failed: "
+                        f"{result.stderr.decode(errors='replace').strip()}"
+                    )
+                return result.stdout
+            else:
+                import tempfile as _tf
+                with _tf.NamedTemporaryFile(
+                    delete=False, suffix='.out'
+                ) as fo:
+                    tmp_out = fo.name
+                cmd = cmd_builder(tmp_in, tmp_out)
+                result = subprocess.run(
+                    cmd, capture_output=True, timeout=120
+                )
+                if result.returncode != 0:
+                    raise PrinterError(
+                        f"PDF → {format_name} conversion failed: "
+                        f"{result.stderr.decode(errors='replace').strip()}"
+                    )
+                with open(tmp_out, 'rb') as f:
+                    return f.read()
+        except PrinterError:
+            raise
+        except subprocess.TimeoutExpired:
+            raise PrinterError(
+                f"PDF → {format_name} conversion timed out after 120s"
+            )
+        except Exception as e:
+            raise PrinterError(
+                f"PDF → {format_name} conversion error: {e}"
+            ) from e
+        finally:
+            if tmp_in:  Path(tmp_in).unlink(missing_ok=True)
+            if tmp_out: Path(tmp_out).unlink(missing_ok=True)
 
     def _query_supported_formats(self) -> list:
         """

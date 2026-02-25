@@ -11,6 +11,7 @@ sf-printer config [flags]     Set one or more config values without entering the
   --client-secret SECRET
   --api-version   VER         (default: v65.0)
 sf-printer verify             Test connection to Salesforce
+sf-printer update             Pull latest code, rebuild Docker image, and restart
 sf-printer start              Start the print server
 """
 import argparse
@@ -265,6 +266,64 @@ def _run_verify(config: ConfigManager):
         print(f'✗ Error: {exc}')
 
 
+def cmd_update(_args):
+    """Pull latest code, rebuild the Docker image, and restart the service."""
+    import subprocess
+    import shutil
+
+    def run(cmd: list, **kwargs):
+        result = subprocess.run(cmd, **kwargs)
+        if result.returncode != 0:
+            sys.exit(result.returncode)
+        return result
+
+    # Detect docker compose variant
+    dc = None
+    if shutil.which('docker'):
+        probe = subprocess.run(
+            ['docker', 'compose', 'version'],
+            capture_output=True
+        )
+        if probe.returncode == 0:
+            dc = ['docker', 'compose']
+    if dc is None and shutil.which('docker-compose'):
+        dc = ['docker-compose']
+    if dc is None:
+        print('Error: neither "docker compose" nor "docker-compose" found.')
+        sys.exit(1)
+
+    print()
+    print('==========================================')
+    print('  Updating Salesforce Printer Server')
+    print('==========================================')
+    print()
+
+    print('Pulling latest code...')
+    run(['git', 'pull'])
+
+    # Backup config if present
+    config_backup_src  = Path('config/config.toml')
+    config_backup_dest = Path('config/config.toml.backup')
+    if config_backup_src.exists():
+        print('Backing up configuration...')
+        import shutil as _shutil
+        _shutil.copy(config_backup_src, config_backup_dest)
+        print(f'  Saved to {config_backup_dest}')
+
+    print('Stopping service...')
+    run(dc + ['down'])
+
+    print('Rebuilding Docker image...')
+    run(dc + ['build', '--no-cache'])
+
+    print('Starting service...')
+    run(dc + ['up', '-d', '--force-recreate'])
+
+    print()
+    print('Update complete!')
+    print()
+
+
 def cmd_start(_args):
     from sf_printer_server.main import main as run_main
     print('Starting Salesforce Printer Server...')
@@ -301,6 +360,9 @@ def main():
     # verify
     sub.add_parser('verify', help='Test Salesforce connection')
 
+    # update
+    sub.add_parser('update', help='Pull latest code, rebuild, and restart')
+
     # start
     sub.add_parser('start',  help='Start the print server')
 
@@ -309,6 +371,7 @@ def main():
     if   args.command == 'setup':  cmd_setup(args)
     elif args.command == 'config': cmd_config(args)
     elif args.command == 'verify': cmd_verify(args)
+    elif args.command == 'update': cmd_update(args)
     elif args.command == 'start':  cmd_start(args)
     else:
         parser.print_help()

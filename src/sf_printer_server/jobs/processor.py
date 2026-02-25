@@ -13,7 +13,7 @@ import json
 from typing import Optional
 import requests
 from sf_printer_server.jobs.models import PrintJob
-from sf_printer_server.printers.drivers import get_printer_driver, get_printer_info
+from sf_printer_server.printers.drivers import get_printer_driver, get_printer_info, PrinterError
 from sf_printer_server.salesforce.context import is_salesforce_url, get_access_token, refresh_token
 from sf_printer_server.salesforce.callback import update_print_job
 
@@ -90,26 +90,24 @@ def _handle_print_job(event: dict) -> bool:
 
             qty = max(1, job.qty)
             for i in range(qty):
-                if not driver.print_raw(content_bytes):
-                    msg = f'Raw print failed on attempt {i + 1}/{qty}'
-                    logger.error(f"{msg} for {job}")
-                    update_print_job(job.correlation_id, success=False, message=msg)
-                    return False
+                driver.print_raw(content_bytes)
             logger.info(f"Raw print job complete — {qty} copy/copies sent to {job.printer_host}:{job.printer_port}")
         elif job.is_pdf:
-            if not driver.print_pdf(content_bytes, job.options):
-                msg = 'PDF print failed'
-                logger.error(f"{msg} for {job}")
-                update_print_job(job.correlation_id, success=False, message=msg)
-                return False
+            driver.print_pdf(content_bytes, job.options)
             logger.info(f"PDF print job complete — sent to {job.printer_host}:{job.printer_port}")
         else:
             logger.error(f"Unknown content_type {job.content_type!r} for {job}")
             update_print_job(job.correlation_id, success=False, message=f'Unknown content_type: {job.content_type!r}')
             return False
+    except PrinterError as e:
+        msg = str(e)
+        logger.error(f"Print error for {job}: {msg}")
+        update_print_job(job.correlation_id, success=False, message=msg)
+        return False
     except Exception as e:
+        msg = f'Unexpected error: {e}'
         logger.error(f"Print error for {job}: {e}", exc_info=True)
-        update_print_job(job.correlation_id, success=False, message=f'Print error: {e}')
+        update_print_job(job.correlation_id, success=False, message=msg)
         return False
 
     update_print_job(job.correlation_id, success=True)

@@ -833,7 +833,7 @@ class IPPDriver(PrinterDriver):
             logger.info(
                 f"IPP → {self.http_url} ({len(content)} bytes, "
                 f"format={document_format}, copies={copies}, media={media or 'default'})")
-            )
+
             resp = _requests.post(
                 self.http_url,
                 data=ipp,
